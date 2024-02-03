@@ -1,48 +1,49 @@
 # EchoNet : Système de Communication TCP
 
 ## Vue d'ensemble
-EchoNet est un système de communication client-serveur TCP simple, développé dans le cadre d'un projet de cours par moi. L'objectif principal de ce projet est de démontrer les principes de base de la programmation réseau, y compris la programmation de sockets, la gestion de multiples connexions clients à l'aide de `select()` et la gestion de processus avec `fork()`. Le système permet aux clients de se connecter au serveur, d'envoyer des messages et de les voir écho, illustrant ainsi un échange de données en temps réel sur TCP.
+EchoNet est un système de communication client-serveur TCP qui illustre les principes de base de la programmation réseau. Ce projet permet aux clients de se connecter à un serveur, d'envoyer des messages qui sont ensuite diffusés à tous les clients connectés, démontrant ainsi un échange de données en temps réel via TCP.
 
 ## Fonctionnalités
-- **Serveur TCP** : Écoute les connexions clients entrantes sur un port spécifié et gère plusieurs clients simultanément.
-- **Client TCP** : Se connecte au serveur TCP et envoie des messages saisis par l'utilisateur. Fonctionne en continu pour permettre l'envoi de plusieurs messages lors d'une session.
-- **Gestion Multi-Clients** : Utilise `select()` pour gérer plusieurs sockets clients et `fork()` pour créer un nouveau processus pour chaque connexion client, assurant une gestion isolée des requêtes clients.
+- **Serveur TCP** : Gère les connexions clients entrantes sur un port spécifié et prend en charge plusieurs clients simultanément.
+- **Client TCP** : Se connecte au serveur et permet à l'utilisateur d'envoyer des messages. Les messages sont reçus de tous les clients connectés, permettant ainsi une communication interactive.
+- **Gestion Multi-Clients** : Utilise `select()` pour gérer de multiples connexions clients de manière non bloquante, sans recourir à `fork()`, ce qui améliore l'efficacité du serveur.
 
 ## Pour Commencer
 
 ### Prérequis
-- Un système d'exploitation Linux ou de type UNIX
-- Le compilateur GCC
+- Un système d'exploitation Linux, macOS ou compatible UNIX.
+- Le compilateur GCC pour la compilation des programmes.
+- Make pour automatiser la compilation avec le `Makefile` fourni.
 
 ### Compilation
-Pour compiler les programmes serveur et client, utilisez les commandes suivantes dans votre terminal :
+Un `Makefile` est fourni pour faciliter la compilation des programmes serveur et client. Suivez ces étapes pour compiler :
 
-```bash
-gcc -o serveur serveur.c
-gcc -o client client.c
-```
+1. Ouvrez un terminal dans le répertoire du projet.
+2. Exécutez la commande suivante pour compiler le serveur et le client :
+   ```bash
+   make
+   ```
+   Les exécutables seront placés dans le dossier `bin/`.
 
 ### Démarrage du Serveur
-Lancez le serveur en spécifiant le numéro de port sur lequel il doit écouter les connexions entrantes :
-
+Pour lancer le serveur, exécutez :
 ```bash
-./serveur 4242
+./bin/serveur <port>
 ```
+Remplacez `<port>` par le numéro de port sur lequel le serveur doit écouter.
 
 ### Démarrage du Client
-Démarrez le client en spécifiant l'adresse IP du serveur et le numéro de port :
-
+Pour démarrer un client, exécutez :
 ```bash
-./client 127.0.0.1 4242
+./bin/client <adresse_serveur> <port> <pseudo>
 ```
+Remplacez `<adresse_serveur>` par l'adresse IP du serveur, `<port>` par le numéro de port, et `<pseudo>` par le nom d'utilisateur souhaité.
 
 ## Contexte du Projet
-Ce projet est principalement un exercice académique, faisant partie d'un cours sur le réseau, visant à comprendre le fonctionnement des protocoles TCP/IP, l'architecture client-serveur et la gestion concurrente du serveur. Il sert d'approche pratique pour apprendre la programmation réseau et comprendre les défis et les solutions dans la gestion de multiples connexions clients dans un environnement réseau.
+Ce projet a été développé dans un contexte académique pour approfondir la compréhension de la programmation réseau, l'architecture client-serveur et les protocoles TCP/IP. Il vise à offrir une expérience pratique de la gestion de connexions réseau simultanées dans un environnement de serveur.
 
 ## Limitations
-- Ce projet est une représentation simpliste du modèle client-serveur et est destiné à des fins éducatives.
-- Le serveur gère chaque client dans un processus séparé, ce qui pourrait ne pas être la méthode la plus efficace pour un grand nombre de clients concurrents.
+Bien que fonctionnel, EchoNet est un projet à visée éducative et pourrait ne pas être adapté à un usage en production sans modifications supplémentaires.
 
 ## Licence
-Ce projet est mis à disposition sous la Licence MIT. Consultez le fichier LICENSE pour plus de détails.
-
+EchoNet est mis à disposition sous Licence MIT. Pour plus de détails, consultez le fichier `LICENSE`.
