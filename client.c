@@ -3,24 +3,26 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <Server Address> <Port>\n", argv[0]);
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <Server Address> <Port> <Pseudo>\n", argv[0]);
         return 1;
     }
 
     char *serverAddress = argv[1];
     int port = atoi(argv[2]);
+    char *pseudo = argv[3];
 
-    // Création de la socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         perror("socket");
         return 1;
     }
 
-    // Construction de l'adresse du serveur
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
@@ -31,49 +33,60 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Connexion au serveur
     if (connect(sock, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
         perror("connect");
         close(sock);
         return 1;
     }
 
-    printf("Connecté au serveur %s:%d\n", serverAddress, port);
-    printf("Entrez vos messages (tapez 'exit' pour terminer) :\n");
+    if (send(sock, pseudo, strlen(pseudo), 0) < 0) {
+        perror("send pseudo");
+        close(sock);
+        return 1;
+    }
 
-    char message[1024];
+    printf("Connecté au serveur %s:%d en tant que %s\n", serverAddress, port, pseudo);
 
-    // Boucle pour envoyer des messages
-    // Boucle pour envoyer des messages
+    fd_set read_fds;
+    int fd_max = sock > STDIN_FILENO ? sock : STDIN_FILENO;
+
     while (1) {
-        printf("> ");
-        if (fgets(message, 1024, stdin) == NULL) {
-            break; // Sortie si fgets échoue
-        }
+        FD_ZERO(&read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+        FD_SET(sock, &read_fds);
 
-        // Suppression du caractère de nouvelle ligne à la fin du message, s'il existe
-        size_t len = strlen(message);
-        if (len > 0 && message[len - 1] == '\n') {
-            message[len - 1] = '\0';
-        }
-
-        // Vérifie si l'utilisateur veut quitter
-        if (strncmp(message, "exit", 4) == 0) {
+        if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) == -1) {
+            perror("select");
             break;
         }
 
-        // Envoi du message
-        if (send(sock, message, strlen(message), 0) < 0) {
-            perror("send");
-            break;
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+            char message[1024];
+            if (fgets(message, 1024, stdin) == NULL) break; // Sortie si fgets échoue
+
+            size_t len = strlen(message);
+            if (message[len - 1] == '\n') message[len - 1] = '\0';
+
+            if (strcmp(message, "exit") == 0) break;
+
+            if (send(sock, message, strlen(message), 0) < 0) {
+                perror("send");
+                break;
+            }
+        }
+
+        if (FD_ISSET(sock, &read_fds)) {
+            char buffer[1024];
+            memset(buffer, 0, sizeof(buffer));
+            ssize_t len = recv(sock, buffer, sizeof(buffer), 0);
+            if (len <= 0) {
+                printf("Déconnexion du serveur.\n");
+                break;
+            }
+            printf("==> %s\n", buffer); // Affiche déjà le pseudo et le message
         }
     }
 
-
-    printf("Déconnexion...\n");
-
-    // Fermeture de la socket
     close(sock);
-
     return 0;
 }
