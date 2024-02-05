@@ -9,11 +9,16 @@ CC = gcc
 # Options de compilation
 CFLAGS = -Wall -g
 
+# Options de linkage
+LDLIBS = -lncurses
+
 # Dossier pour les exécutables
 BIN_DIR = bin
 
 # Commande de nettoyage selon l'OS
 ifeq ($(UNAME_S),Linux)
+    RM = rm -f
+else ifeq ($(UNAME_S),Darwin) # Ajout pour macOS
     RM = rm -f
 endif
 
@@ -33,7 +38,7 @@ server:
 
 # Règle pour construire le client
 client:
-	$(CC) $(CFLAGS) client.c -o $(BIN_DIR)/client
+	$(CC) $(CFLAGS) client.c $(LDLIBS) -o $(BIN_DIR)/client
 
 # Règle pour nettoyer les fichiers compilés
 clean:
