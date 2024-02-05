@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -113,6 +114,20 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     printf("Nouveau client connecté : socket %d\n", client_sock);
 }
 
+void log_message(const char *message) {
+    FILE *file = fopen("messages.log", "a");
+    if (file == NULL) {
+        perror("Erreur lors de l'ouverture du fichier de log");
+        return;
+    }
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char formatted_time[20]; 
+    strftime(formatted_time, sizeof(formatted_time), "%Y-%m-%d %H:%M:%S", t);
+    fprintf(file, "[%s] %s\n", formatted_time, message);
+    fclose(file);
+}
+
 void handle_client_message(int client_sock, fd_set *master_fds) {
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, BUFFER_SIZE);
@@ -130,7 +145,9 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             sender_pseudo[PSEUDO_SIZE - 1] = '\0';
             printf("Pseudo '%s' attribué au client %d\n", buffer, client_sock);
         } else {
-            printf("Message reçu de %s: %s\n", sender_pseudo, buffer);
+            char full_message[BUFFER_SIZE + PSEUDO_SIZE];
+            snprintf(full_message, sizeof(full_message), "%s : %s", sender_pseudo, buffer);
+            log_message(full_message); // Log le message complet
             broadcast_message(client_sock, buffer, sender_pseudo);
         }
     }
