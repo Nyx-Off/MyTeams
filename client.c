@@ -6,14 +6,12 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <ncurses.h>
 
 #define BUFFER_SIZE 1024
 
-// Prototypes de fonctions
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port);
 void send_pseudo(int sock, char *pseudo);
-void handle_user_input(int sock);
-void receive_message(int sock);
 void close_connection(int sock);
 
 int main(int argc, char *argv[]) {
@@ -22,16 +20,32 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int sock;
-    struct sockaddr_in serverAddr;
     char *serverAddress = argv[1];
     int port = atoi(argv[2]);
     char *pseudo = argv[3];
+    int sock;
+    struct sockaddr_in serverAddr;
 
+    // Initialisation de ncurses
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+
+    // Initialisation de la connexion
     init_connection(&sock, &serverAddr, serverAddress, port);
     send_pseudo(sock, pseudo);
 
-    printf("Connecté au serveur %s:%d en tant que %s\n", serverAddress, port, pseudo);
+    // Création de fenêtres pour les messages et l'entrée
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+    WINDOW *messages_win = newwin(max_y - 1, max_x, 0, 0);
+    WINDOW *input_win = newwin(1, max_x, max_y - 1, 0);
+    scrollok(messages_win, TRUE);
+
+    wprintw(messages_win, "Connecté au serveur %s:%d en tant que %s\n", serverAddress, port, pseudo);
+    wrefresh(messages_win);
+    wrefresh(input_win);
 
     fd_set read_fds;
     int fd_max = sock;
@@ -47,15 +61,55 @@ int main(int argc, char *argv[]) {
         }
 
         if (FD_ISSET(STDIN_FILENO, &read_fds)) {
-            handle_user_input(sock);
+            char input_buffer[BUFFER_SIZE] = {0};
+            int input_pos = 0;
+            werase(input_win); // Efface la fenêtre d'entrée pour une nouvelle saisie
+            wrefresh(input_win);
+
+            int ch;
+            while ((ch = wgetch(input_win)) != '\n' && input_pos < BUFFER_SIZE - 1) {
+                if (ch == KEY_BACKSPACE || ch == 127) {
+                    if (input_pos > 0) {
+                        input_pos--;
+                        wmove(input_win, 0, input_pos); // Déplace le curseur vers l'arrière
+                        wdelch(input_win); // Supprime le caractère sous le curseur
+                    }
+                } else {
+                    input_buffer[input_pos++] = (char)ch;
+                    waddch(input_win, ch); // Affiche le caractère tapé
+                }
+            }
+            input_buffer[input_pos] = '\0';
+
+            if (strcmp(input_buffer, "/exit") == 0) {
+                break; // Sortie si "/exit" est entré
+            } else {
+                wprintw(messages_win, "> %s\n", input_buffer); // Affiche le message dans messages_win
+                wrefresh(messages_win);
+                send(sock, input_buffer, strlen(input_buffer), 0);
+                werase(input_win); // Efface la fenêtre d'entrée après l'envoi
+                wrefresh(input_win);
+            }
         }
 
         if (FD_ISSET(sock, &read_fds)) {
-            receive_message(sock);
+            char buffer[BUFFER_SIZE] = {0};
+            ssize_t len = recv(sock, buffer, BUFFER_SIZE - 1, 0);
+            if (len <= 0) {
+                wprintw(messages_win, "Déconnexion du serveur.\n");
+                break;
+            } else {
+                wprintw(messages_win, "%s\n", buffer);
+                wrefresh(messages_win);
+            }
         }
     }
 
+    // Nettoyage et sortie
     close_connection(sock);
+    delwin(input_win);
+    delwin(messages_win);
+    endwin();
     return 0;
 }
 
@@ -88,32 +142,6 @@ void send_pseudo(int sock, char *pseudo) {
         close(sock);
         exit(1);
     }
-}
-
-void handle_user_input(int sock) {
-    char message[BUFFER_SIZE];
-    if (fgets(message, BUFFER_SIZE, stdin) == NULL) return; // Sortie si fgets échoue
-
-    size_t len = strlen(message);
-    if (message[len - 1] == '\n') message[len - 1] = '\0';
-
-    if (strcmp(message, "/exit") == 0) exit(0); // Sortie si l'utilisateur tape "/exit" 1er commande
-
-    if (send(sock, message, strlen(message), 0) < 0) {
-        perror("send");
-        exit(1);
-    }
-}
-
-void receive_message(int sock) {
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    ssize_t len = recv(sock, buffer, BUFFER_SIZE, 0);
-    if (len <= 0) {
-        printf("Déconnexion du serveur.\n");
-        exit(0);
-    }
-    printf("==> %s\n", buffer);
 }
 
 void close_connection(int sock) {
