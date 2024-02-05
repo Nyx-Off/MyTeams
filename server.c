@@ -13,6 +13,8 @@
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
 #define PSEUDO_SIZE 32
+#define FULL_MESSAGE_SIZE (PSEUDO_SIZE + BUFFER_SIZE + 2) // +2 pour ": " et '\0'
+
 
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
@@ -137,26 +139,44 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         wrefresh(stdscr);
         close_socket(client_sock, master_fds);
     } else {
-        char full_message[BUFFER_SIZE + PSEUDO_SIZE];
-        snprintf(full_message, sizeof(full_message), "Client %d : %s", client_sock, buffer);
-        log_message(full_message);
+        // Vérifier si le client a déjà un pseudo
+        if (client_pseudos[client_sock][0] == '\0') {
+            strncpy(client_pseudos[client_sock], buffer, PSEUDO_SIZE - 1);
+            client_pseudos[client_sock][PSEUDO_SIZE - 1] = '\0'; // Assurer la fin de chaîne
+            wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+            wprintw(stdscr, "Pseudo '%s' attribué au client %d\n", buffer, client_sock);
+            wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+            wrefresh(stdscr);
+        } else {
+            // Construire le message complet avec pseudo et message
+            char full_message[FULL_MESSAGE_SIZE];
+            snprintf(full_message, sizeof(full_message), "%s: %s", client_pseudos[client_sock], buffer);
 
-        wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-        wprintw(stdscr, "%s\n", full_message);
-        wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-        wrefresh(stdscr);
+            // Afficher le message avec le pseudo du client
+            wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+            wprintw(stdscr, "%s\n", full_message);
+            wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+            wrefresh(stdscr);
 
-        broadcast_message(client_sock, buffer, "Server");
+            // Enregistrer le message dans le fichier de log avec l'horodatage
+            log_message(full_message);
+
+            // Diffuser le message avec le pseudo
+            broadcast_message(client_sock, buffer, client_pseudos[client_sock]);
+        }
     }
 }
 
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
     for (int i = 0; i < total_clients; i++) {
         if (client_socks[i] != sender_sock) {
-            send(client_socks[i], message, strlen(message), 0);
+            char full_message[BUFFER_SIZE + PSEUDO_SIZE];
+            snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message); // Concaténer le pseudo et le message
+            send(client_socks[i], full_message, strlen(full_message), 0);
         }
     }
 }
+
 
 void close_socket(int sock, fd_set *master_fds) {
     close(sock);
@@ -177,3 +197,4 @@ void log_message(const char *message) {
     fprintf(file, "[%s] %s\n", formatted_time, message);
     fclose(file);
 }
+
