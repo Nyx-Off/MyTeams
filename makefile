@@ -18,19 +18,26 @@ BIN_DIR = bin
 # Commande de nettoyage selon l'OS
 ifeq ($(UNAME_S),Linux)
     RM = rm -f
+    INSTALL = sudo apt-get install
 else ifeq ($(UNAME_S),Darwin) # Ajout pour macOS
     RM = rm -f
+    # Ajoutez ici la commande d'installation pour macOS si nécessaire
 endif
 
 # Créer le dossier bin si nécessaire
 $(shell mkdir -p $(BIN_DIR))
 
-# Marquer all, server, client, et clean comme cibles toujours obsolètes
-.PHONY: all server client clean
+# Marquer all, server, client, clean et deps comme cibles toujours obsolètes
+.PHONY: all server client clean deps
 
-# Construire les programmes serveur et client par défaut et afficher un message
-all: server client
+# Construire les programmes serveur et client par défaut après avoir installé les dépendances
+all: deps server client
 	@echo "Compilation du Server et du Client faite avec succès."
+
+# Règle pour installer les dépendances
+deps:
+	@echo "Vérification des dépendances..."
+	@dpkg -s libncurses5-dev libncursesw5-dev >/dev/null 2>&1 || (echo "Installation des dépendances manquantes..."; $(INSTALL) libncurses5-dev libncursesw5-dev)
 
 # Règle pour construire le serveur
 server:
