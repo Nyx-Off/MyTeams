@@ -71,11 +71,6 @@ int main(int argc, char *argv[]) {
         if (select_result == -1) {
             perror("select");
             break;
-        } else if (select_result == 0) {
-            // Timeout atteint sans activité
-            wprintw(messages_win, "Aucune réponse du serveur depuis 5 secondes...\n");
-            wrefresh(messages_win);
-            break;
         } else {
             if (FD_ISSET(STDIN_FILENO, &read_fds)) {
                 char input_buffer[BUFFER_SIZE] = {0};
