@@ -1,7 +1,7 @@
-# EchoNet : Système de Communication TCP
+# My Teams : Système de Communication TCP
 
 ## Vue d'ensemble
-EchoNet est un système de communication client-serveur TCP qui illustre les principes de base de la programmation réseau. Ce projet permet aux clients de se connecter à un serveur, d'envoyer des messages qui sont ensuite diffusés à tous les clients connectés, démontrant ainsi un échange de données en temps réel via TCP.
+My Teams est un système de communication client-serveur TCP qui illustre les principes de base de la programmation réseau. Ce projet permet aux clients de se connecter à un serveur, d'envoyer des messages qui sont ensuite diffusés à tous les clients connectés, démontrant ainsi un échange de données en temps réel via TCP.
 
 ## Fonctionnalités
 - **Serveur TCP** : Gère les connexions clients entrantes sur un port spécifié et prend en charge plusieurs clients simultanément.
