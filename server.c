@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -7,22 +6,27 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <ncurses.h>
+#include <ctype.h>
+#include <time.h>
 
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
 #define PSEUDO_SIZE 32
 
-// Variables globales pour simplifier
+#define RECEIVED_MSG_COLOR_PAIR 1
+#define SENT_MSG_COLOR_PAIR 2
+
 int client_socks[MAX_CLIENTS] = {0};
 char client_pseudos[MAX_CLIENTS][PSEUDO_SIZE] = {0};
 int total_clients = 0;
 
-// Prototypes de fonctions
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port);
 void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max);
 void handle_client_message(int client_sock, fd_set *master_fds);
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo);
 void close_socket(int sock, fd_set *master_fds);
+void log_message(const char *message);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -37,20 +41,25 @@ int main(int argc, char *argv[]) {
     fd_set read_fds, master_fds;
     int fd_max;
 
+    // Initialisation de ncurses
+    initscr();
+    cbreak();
+    noecho();
+    start_color();
+    init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
+    init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
+
     init_server(&server_sock, &server_addr, port);
     FD_ZERO(&master_fds);
     FD_ZERO(&read_fds);
     FD_SET(server_sock, &master_fds);
     fd_max = server_sock;
 
-    printf("Le serveur démarre sur le port %d.\n", port);
-    printf("En attente de messages des clients...\n");
-
     while (1) {
         read_fds = master_fds;
         if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
-            exit(4);
+            break;
         }
 
         for (int i = 0; i <= fd_max; i++) {
@@ -64,8 +73,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Fermeture du socket serveur
     close(server_sock);
+    endwin(); // Fermeture de ncurses
     return 0;
 }
 
@@ -111,7 +120,48 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
         *fd_max = client_sock;
     }
 
-    printf("Nouveau client connecté : socket %d\n", client_sock);
+    wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+    wprintw(stdscr, "Nouveau client connecté : socket %d\n", client_sock);
+    wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+    wrefresh(stdscr);
+}
+
+void handle_client_message(int client_sock, fd_set *master_fds) {
+    char buffer[BUFFER_SIZE] = {0};
+    ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
+
+    if (len <= 0) {
+        wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        wprintw(stdscr, "Client déconnecté : socket %d\n", client_sock);
+        wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        wrefresh(stdscr);
+        close_socket(client_sock, master_fds);
+    } else {
+        char full_message[BUFFER_SIZE + PSEUDO_SIZE];
+        snprintf(full_message, sizeof(full_message), "Client %d : %s", client_sock, buffer);
+        log_message(full_message);
+
+        wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        wprintw(stdscr, "%s\n", full_message);
+        wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        wrefresh(stdscr);
+
+        broadcast_message(client_sock, buffer, "Server");
+    }
+}
+
+void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
+    for (int i = 0; i < total_clients; i++) {
+        if (client_socks[i] != sender_sock) {
+            send(client_socks[i], message, strlen(message), 0);
+        }
+    }
+}
+
+void close_socket(int sock, fd_set *master_fds) {
+    close(sock);
+    FD_CLR(sock, master_fds);
+    // Suppression du socket de la liste des clients ici, si nécessaire
 }
 
 void log_message(const char *message) {
@@ -126,46 +176,4 @@ void log_message(const char *message) {
     strftime(formatted_time, sizeof(formatted_time), "%Y-%m-%d %H:%M:%S", t);
     fprintf(file, "[%s] %s\n", formatted_time, message);
     fclose(file);
-}
-
-void handle_client_message(int client_sock, fd_set *master_fds) {
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    ssize_t len = recv(client_sock, buffer, BUFFER_SIZE, 0);
-
-    if (len <= 0) {
-        printf("Client déconnecté : socket %d\n", client_sock);
-        close_socket(client_sock, master_fds);
-    } else {
-        buffer[len] = '\0';
-        char *sender_pseudo = client_pseudos[client_sock];
-
-        if (sender_pseudo[0] == '\0') {
-            strncpy(sender_pseudo, buffer, PSEUDO_SIZE - 1);
-            sender_pseudo[PSEUDO_SIZE - 1] = '\0';
-            printf("Pseudo '%s' attribué au client %d\n", buffer, client_sock);
-        } else {
-            char full_message[BUFFER_SIZE + PSEUDO_SIZE];
-            snprintf(full_message, sizeof(full_message), "%s : %s", sender_pseudo, buffer);
-            printf("%s\n", full_message);
-            log_message(full_message);
-            broadcast_message(client_sock, buffer, sender_pseudo);
-        }
-    }
-}
-
-void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
-    for (int i = 0; i < total_clients; i++) {
-        if (client_socks[i] != sender_sock) {
-            char full_message[BUFFER_SIZE + PSEUDO_SIZE];
-            snprintf(full_message, sizeof(full_message), "%s : %s", sender_pseudo, message);
-            send(client_socks[i], full_message, strlen(full_message), 0);
-        }
-    }
-}
-
-void close_socket(int sock, fd_set *master_fds) {
-    close(sock);
-    FD_CLR(sock, master_fds);
-    // Ici, on pourrait également gérer la suppression du socket de la liste des clients
 }
