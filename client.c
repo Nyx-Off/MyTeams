@@ -22,6 +22,8 @@ int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr, "Usage: %s <Server Address> <Port> <Pseudo>\n", argv[0]);
         return 1;
+        initscr();
+        endwin();
     }
 
     char *serverAddress = argv[1];
@@ -86,7 +88,6 @@ int main(int argc, char *argv[]) {
             }
             input_buffer[input_pos] = '\0';
 
-            // Vérifiez si le message est vide ou ne contient que des espaces blancs
             int is_empty = 1;
             for (int i = 0; i < input_pos; ++i) {
                 if (!isspace((unsigned char)input_buffer[i])) {
@@ -97,16 +98,16 @@ int main(int argc, char *argv[]) {
 
             if (!is_empty) {
                 if (strcmp(input_buffer, "/exit") == 0) {
-                    break; // Sortie si "/exit" est entré
+                    break; 
                 } else {
-                    wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Activer la couleur pour les messages envoyés
+                    wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); 
                     wprintw(messages_win, "> %s\n", input_buffer);
-                    wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Désactiver la couleur
+                    wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
                     wrefresh(messages_win);
                     send(sock, input_buffer, strlen(input_buffer), 0);
                 }
             }
-            werase(input_win); // Efface la fenêtre d'entrée après la vérification
+            werase(input_win);
             wrefresh(input_win);
         }
 
@@ -118,9 +119,9 @@ int main(int argc, char *argv[]) {
                 wprintw(messages_win, "Déconnexion du serveur.\n");
                 break;
             } else {
-                wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); // Activer la couleur pour les messages reçus
+                wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); 
                 wprintw(messages_win, "%s\n", buffer);
-                wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); // Désactiver la couleur
+                wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
                 wrefresh(messages_win);
             }
         }
@@ -137,6 +138,7 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
     *sock = socket(AF_INET, SOCK_STREAM, 0);
     if (*sock < 0) {
         perror("socket");
+        endwin();
         exit(1);
     }
 
@@ -146,12 +148,14 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
     if (inet_pton(AF_INET, serverAddress, &serverAddr->sin_addr) <= 0) {
         perror("inet_pton");
         close(*sock);
+        endwin();
         exit(1);
     }
 
     if (connect(*sock, (struct sockaddr *)serverAddr, sizeof(*serverAddr)) < 0) {
         perror("connect");
         close(*sock);
+        endwin();
         exit(1);
     }
 }
@@ -160,10 +164,12 @@ void send_pseudo(int sock, char *pseudo) {
     if (send(sock, pseudo, strlen(pseudo), 0) < 0) {
         perror("send pseudo");
         close(sock);
+        endwin();
         exit(1);
     }
 }
 
 void close_connection(int sock) {
+    endwin();
     close(sock);
 }
