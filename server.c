@@ -147,7 +147,8 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         } else {
             char full_message[BUFFER_SIZE + PSEUDO_SIZE];
             snprintf(full_message, sizeof(full_message), "%s : %s", sender_pseudo, buffer);
-            log_message(full_message); // Log le message complet
+            printf("%s\n", full_message);
+            log_message(full_message);
             broadcast_message(client_sock, buffer, sender_pseudo);
         }
     }

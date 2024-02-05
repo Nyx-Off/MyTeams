@@ -97,7 +97,7 @@ void handle_user_input(int sock) {
     size_t len = strlen(message);
     if (message[len - 1] == '\n') message[len - 1] = '\0';
 
-    if (strcmp(message, "exit") == 0) exit(0);
+    if (strcmp(message, "/exit") == 0) exit(0); // Sortie si l'utilisateur tape "/exit" 1er commande
 
     if (send(sock, message, strlen(message), 0) < 0) {
         perror("send");
