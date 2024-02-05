@@ -7,8 +7,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <ncurses.h>
+#include <ctype.h>
 
 #define BUFFER_SIZE 1024
+
+#define RECEIVED_MSG_COLOR_PAIR 1
+#define SENT_MSG_COLOR_PAIR 2
 
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port);
 void send_pseudo(int sock, char *pseudo);
@@ -26,17 +30,18 @@ int main(int argc, char *argv[]) {
     int sock;
     struct sockaddr_in serverAddr;
 
-    // Initialisation de ncurses
     initscr();
     cbreak();
+    start_color();
     noecho();
     keypad(stdscr, TRUE);
 
-    // Initialisation de la connexion
+    init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK); 
+    init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK); 
+
     init_connection(&sock, &serverAddr, serverAddress, port);
     send_pseudo(sock, pseudo);
 
-    // Création de fenêtres pour les messages et l'entrée
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
     WINDOW *messages_win = newwin(max_y - 1, max_x, 0, 0);
@@ -63,7 +68,7 @@ int main(int argc, char *argv[]) {
         if (FD_ISSET(STDIN_FILENO, &read_fds)) {
             char input_buffer[BUFFER_SIZE] = {0};
             int input_pos = 0;
-            werase(input_win); // Efface la fenêtre d'entrée pour une nouvelle saisie
+            werase(input_win);
             wrefresh(input_win);
 
             int ch;
@@ -71,41 +76,56 @@ int main(int argc, char *argv[]) {
                 if (ch == KEY_BACKSPACE || ch == 127) {
                     if (input_pos > 0) {
                         input_pos--;
-                        wmove(input_win, 0, input_pos); // Déplace le curseur vers l'arrière
-                        wdelch(input_win); // Supprime le caractère sous le curseur
+                        wmove(input_win, 0, input_pos);
+                        wdelch(input_win);
                     }
                 } else {
                     input_buffer[input_pos++] = (char)ch;
-                    waddch(input_win, ch); // Affiche le caractère tapé
+                    waddch(input_win, ch);
                 }
             }
             input_buffer[input_pos] = '\0';
 
-            if (strcmp(input_buffer, "/exit") == 0) {
-                break; // Sortie si "/exit" est entré
-            } else {
-                wprintw(messages_win, "> %s\n", input_buffer); // Affiche le message dans messages_win
-                wrefresh(messages_win);
-                send(sock, input_buffer, strlen(input_buffer), 0);
-                werase(input_win); // Efface la fenêtre d'entrée après l'envoi
-                wrefresh(input_win);
+            // Vérifiez si le message est vide ou ne contient que des espaces blancs
+            int is_empty = 1;
+            for (int i = 0; i < input_pos; ++i) {
+                if (!isspace((unsigned char)input_buffer[i])) {
+                    is_empty = 0;
+                    break;
+                }
             }
+
+            if (!is_empty) {
+                if (strcmp(input_buffer, "/exit") == 0) {
+                    break; // Sortie si "/exit" est entré
+                } else {
+                    wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Activer la couleur pour les messages envoyés
+                    wprintw(messages_win, "> %s\n", input_buffer);
+                    wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Désactiver la couleur
+                    wrefresh(messages_win);
+                    send(sock, input_buffer, strlen(input_buffer), 0);
+                }
+            }
+            werase(input_win); // Efface la fenêtre d'entrée après la vérification
+            wrefresh(input_win);
         }
 
         if (FD_ISSET(sock, &read_fds)) {
             char buffer[BUFFER_SIZE] = {0};
             ssize_t len = recv(sock, buffer, BUFFER_SIZE - 1, 0);
+
             if (len <= 0) {
                 wprintw(messages_win, "Déconnexion du serveur.\n");
                 break;
             } else {
+                wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); // Activer la couleur pour les messages reçus
                 wprintw(messages_win, "%s\n", buffer);
+                wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); // Désactiver la couleur
                 wrefresh(messages_win);
             }
         }
     }
 
-    // Nettoyage et sortie
     close_connection(sock);
     delwin(input_win);
     delwin(messages_win);
