@@ -10,36 +10,31 @@
 #include <ctype.h>
 
 #define BUFFER_SIZE 1024
-
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
 
+void initialize_ncurses();
+void setup_color_pairs();
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port);
 void send_pseudo(int sock, char *pseudo);
-void close_connection(int sock);
+void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock);
+void handle_server_message(WINDOW *messages_win, int sock);
+void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr, "Usage: %s <Server Address> <Port> <Pseudo>\n", argv[0]);
         return 1;
-        initscr();
-        endwin();
     }
+
+    initialize_ncurses();
+    setup_color_pairs();
 
     char *serverAddress = argv[1];
     int port = atoi(argv[2]);
     char *pseudo = argv[3];
     int sock;
     struct sockaddr_in serverAddr;
-
-    initscr();
-    cbreak();
-    start_color();
-    noecho();
-    keypad(stdscr, TRUE);
-
-    init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK); 
-    init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK); 
 
     init_connection(&sock, &serverAddr, serverAddress, port);
     send_pseudo(sock, pseudo);
@@ -50,7 +45,7 @@ int main(int argc, char *argv[]) {
     WINDOW *input_win = newwin(1, max_x, max_y - 1, 0);
     scrollok(messages_win, TRUE);
 
-    wprintw(messages_win, "Connecté au serveur %s:%d en tant que %s\n", serverAddress, port, pseudo);
+    wprintw(messages_win, "Connected to server %s:%d as %s\n", serverAddress, port, pseudo);
     wrefresh(messages_win);
     wrefresh(input_win);
 
@@ -62,82 +57,41 @@ int main(int argc, char *argv[]) {
         FD_SET(STDIN_FILENO, &read_fds);
         FD_SET(sock, &read_fds);
 
-        struct timeval tv; // Structure pour le timeout
-        tv.tv_sec = 5;  // Timeout après 5 secondes
-        tv.tv_usec = 0; // 0 microsecondes
+        struct timeval tv;
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
 
         int select_result = select(fd_max + 1, &read_fds, NULL, NULL, &tv);
 
         if (select_result == -1) {
             perror("select");
             break;
-        } else {
-            if (FD_ISSET(STDIN_FILENO, &read_fds)) {
-                char input_buffer[BUFFER_SIZE] = {0};
-                int input_pos = 0;
-                werase(input_win);
-                wrefresh(input_win);
+        }
 
-                int ch;
-                while ((ch = wgetch(input_win)) != '\n' && input_pos < BUFFER_SIZE - 1) {
-                    if (ch == KEY_BACKSPACE || ch == 127) {
-                        if (input_pos > 0) {
-                            input_pos--;
-                            wmove(input_win, 0, input_pos);
-                            wdelch(input_win);
-                        }
-                    } else {
-                        input_buffer[input_pos++] = (char)ch;
-                        waddch(input_win, ch);
-                    }
-                }
-                input_buffer[input_pos] = '\0';
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+            handle_user_input(input_win, messages_win, sock);
+        }
 
-                int is_empty = 1;
-                for (int i = 0; i < input_pos; ++i) {
-                    if (!isspace((unsigned char)input_buffer[i])) {
-                        is_empty = 0;
-                        break;
-                    }
-                }
-
-                if (!is_empty) {
-                    if (strcmp(input_buffer, "/exit") == 0) {
-                        break; 
-                    } else {
-                        wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-                        wprintw(messages_win, "> %s\n", input_buffer);
-                        wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-                        wrefresh(messages_win);
-                        send(sock, input_buffer, strlen(input_buffer), 0);
-                    }
-                }
-                werase(input_win);
-                wrefresh(input_win);
-            }
-
-            if (FD_ISSET(sock, &read_fds)) {
-                char buffer[BUFFER_SIZE] = {0};
-                ssize_t len = recv(sock, buffer, BUFFER_SIZE - 1, 0);
-
-                if (len <= 0) {
-                    wprintw(messages_win, "Déconnexion du serveur.\n");
-                    break;
-                } else {
-                    wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-                    wprintw(messages_win, "%s\n", buffer);
-                    wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-                    wrefresh(messages_win);
-                }
-            }
+        if (FD_ISSET(sock, &read_fds)) {
+            handle_server_message(messages_win, sock);
         }
     }
 
-    close_connection(sock);
-    delwin(input_win);
-    delwin(messages_win);
-    endwin();
+    close_application(sock, input_win, messages_win);
     return 0;
+}
+
+void initialize_ncurses() {
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    start_color();
+}
+
+void setup_color_pairs() {
+    init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
+    init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
 }
 
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port) {
@@ -145,13 +99,11 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
     if (*sock < 0) {
         perror("socket");
         endwin();
-        printf("Impossible de créer un socket.\n");
         exit(1);
     }
 
-    // Définir un timeout sur le socket
     struct timeval tv;
-    tv.tv_sec = 5;  // Timeout de 5 secondes
+    tv.tv_sec = 5;
     tv.tv_usec = 0;
     setsockopt(*sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
     setsockopt(*sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
@@ -163,7 +115,6 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
         perror("inet_pton");
         close(*sock);
         endwin();
-        printf("Adresse IP invalide : %s\n", serverAddress);
         exit(1);
     }
 
@@ -171,7 +122,6 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
         perror("connect");
         close(*sock);
         endwin();
-        printf("Impossible de se connecter au serveur %s:%d\n", serverAddress, port);
         exit(1);
     }
 }
@@ -181,13 +131,71 @@ void send_pseudo(int sock, char *pseudo) {
         perror("send pseudo");
         close(sock);
         endwin();
-        printf("Impossible d'envoyer le pseudo au serveur.\n");
         exit(1);
     }
 }
 
-void close_connection(int sock) {
-    printf("Fermeture de la connexion.\n");
+void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
+    char input_buffer[BUFFER_SIZE] = {0};
+    int input_pos = 0;
+    werase(input_win);
+    wrefresh(input_win);
+
+    int ch;
+    while ((ch = wgetch(input_win)) != '\n' && input_pos < BUFFER_SIZE - 1) {
+        if (ch == KEY_BACKSPACE || ch == 127) {
+            if (input_pos > 0) {
+                input_pos--;
+                wmove(input_win, 0, input_pos);
+                wdelch(input_win);
+            }
+        } else {
+            input_buffer[input_pos++] = (char)ch;
+            waddch(input_win, ch);
+        }
+    }
+    input_buffer[input_pos] = '\0';
+
+    if (strcmp(input_buffer, "/exit") == 0) {
+        close_application(sock, input_win, messages_win);
+        exit(0);
+    } else if (strlen(input_buffer) > 0) {
+        wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        wprintw(messages_win, "> %s\n", input_buffer);
+        wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        wrefresh(messages_win);
+        send(sock, input_buffer, strlen(input_buffer), 0);
+    }
+
+    werase(input_win);
+    wrefresh(input_win);
+}
+
+void handle_server_message(WINDOW *messages_win, int sock) {
+    char buffer[BUFFER_SIZE] = {0};
+    ssize_t len = recv(sock, buffer, BUFFER_SIZE - 1, 0);
+
+    if (len <= 0) {
+        wprintw(messages_win, "Server disconnected.\n");
+        wrefresh(messages_win);
+        close_application(sock, NULL, messages_win);
+        exit(0);
+    } else {
+        wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        wprintw(messages_win, "%s\n", buffer);
+        wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        wrefresh(messages_win);
+    }
+}
+
+void close_application(int sock, WINDOW *input_win, WINDOW *messages_win) {
+    if (input_win != NULL) {
+        delwin(input_win);
+    }
+    if (messages_win != NULL) {
+        delwin(messages_win);
+    }
     endwin();
     close(sock);
+    printf("Connection closed.\n");
 }

@@ -9,12 +9,13 @@
 #include <ncurses.h>
 #include <ctype.h>
 #include <time.h>
+#include <poll.h>
+
 
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
 #define PSEUDO_SIZE 32
 #define FULL_MESSAGE_SIZE (PSEUDO_SIZE + BUFFER_SIZE + 2) // +2 pour ": " et '\0'
-
 
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
@@ -40,9 +41,6 @@ int main(int argc, char *argv[]) {
     int server_sock;
     struct sockaddr_in server_addr;
 
-    fd_set read_fds, master_fds;
-    int fd_max;
-
     // Initialisation de ncurses
     initscr();
     cbreak();
@@ -51,14 +49,29 @@ int main(int argc, char *argv[]) {
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
 
+    scrollok(stdscr, TRUE);
+
+    wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+    wprintw(stdscr, "Serveur démarré sur le port %d\n", port);
+    wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+    wrefresh(stdscr);
+
+    fd_set read_fds, master_fds;
+    int fd_max;
+
     init_server(&server_sock, &server_addr, port);
     FD_ZERO(&master_fds);
-    FD_ZERO(&read_fds);
     FD_SET(server_sock, &master_fds);
     fd_max = server_sock;
 
     while (1) {
-        read_fds = master_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(server_sock, &read_fds);
+        for (int i = 0; i < total_clients; i++) {
+            FD_SET(client_socks[i], &read_fds);
+        }
+        fd_max = (fd_max > server_sock) ? fd_max : server_sock;
+
         if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
             break;
@@ -84,6 +97,15 @@ void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
     *server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (*server_sock < 0) {
         perror("socket");
+        endwin();
+        exit(1);
+    }
+
+    int optval = 1;
+    if (setsockopt(*server_sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt");
+        close(*server_sock);
+        endwin();
         exit(1);
     }
 
@@ -95,12 +117,14 @@ void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
     if (bind(*server_sock, (struct sockaddr *)server_addr, sizeof(*server_addr)) < 0) {
         perror("bind");
         close(*server_sock);
+        endwin(); // Fermeture de ncurses
         exit(1);
     }
 
     if (listen(*server_sock, MAX_CLIENTS) < 0) {
         perror("listen");
         close(*server_sock);
+        endwin();
         exit(1);
     }
 }
@@ -113,6 +137,7 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_size);
     if (client_sock < 0) {
         perror("accept");
+        endwin();
         return;
     }
 
@@ -130,15 +155,24 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
 
 void handle_client_message(int client_sock, fd_set *master_fds) {
     char buffer[BUFFER_SIZE] = {0};
+    // Réception du message du client
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
 
     if (len <= 0) {
-        wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-        wprintw(stdscr, "Client déconnecté : socket %d\n", client_sock);
-        wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-        wrefresh(stdscr);
-        close_socket(client_sock, master_fds);
+        // Si len est 0, le client s'est déconnecté proprement
+        if (len == 0) {
+            wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+            wprintw(stdscr, "Client déconnecté proprement: socket %d\n", client_sock);
+            wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        } else {
+            // Si len est inférieur à 0, une erreur de lecture s'est produite
+            perror("recv error");
+        }
+        close_socket(client_sock, master_fds); // Fermer la socket du client
     } else {
+        // Le client a envoyé un message, len est le nombre d'octets reçus
+        buffer[len] = '\0'; // S'assurer que le message est terminé par un caractère nul
+
         // Vérifier si le client a déjà un pseudo
         if (client_pseudos[client_sock][0] == '\0') {
             strncpy(client_pseudos[client_sock], buffer, PSEUDO_SIZE - 1);
@@ -146,7 +180,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
             wprintw(stdscr, "Pseudo '%s' attribué au client %d\n", buffer, client_sock);
             wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-            wrefresh(stdscr);
         } else {
             // Construire le message complet avec pseudo et message
             char full_message[FULL_MESSAGE_SIZE];
@@ -156,15 +189,15 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
             wprintw(stdscr, "%s\n", full_message);
             wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-            wrefresh(stdscr);
 
             // Enregistrer le message dans le fichier de log avec l'horodatage
             log_message(full_message);
 
-            // Diffuser le message avec le pseudo
+            // Diffuser le message avec le pseudo à tous les autres clients
             broadcast_message(client_sock, buffer, client_pseudos[client_sock]);
         }
     }
+    wrefresh(stdscr); // Rafraîchir la fenêtre après chaque modification
 }
 
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
@@ -179,10 +212,25 @@ void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
 
 
 void close_socket(int sock, fd_set *master_fds) {
-    close(sock);
-    FD_CLR(sock, master_fds);
-    // Suppression du socket de la liste des clients ici, si nécessaire
+    close(sock); // Fermer la socket
+    FD_CLR(sock, master_fds); // Retirer la socket de l'ensemble des descripteurs
+
+    // Trouver l'index du client dans client_socks et le retirer
+    for (int i = 0; i < total_clients; i++) {
+        if (client_socks[i] == sock) {
+            // Décaler tous les éléments après l'index trouvé vers la gauche
+            for (int j = i; j < total_clients - 1; j++) {
+                client_socks[j] = client_socks[j + 1];
+                strncpy(client_pseudos[j], client_pseudos[j + 1], PSEUDO_SIZE);
+            }
+            client_socks[total_clients - 1] = 0; // Réinitialiser la dernière position
+            memset(client_pseudos[total_clients - 1], 0, PSEUDO_SIZE); // Réinitialiser le dernier pseudo
+            total_clients--; // Réduire le nombre total de clients
+            break; // Sortir de la boucle après avoir trouvé et traité le client
+        }
+    }
 }
+
 
 void log_message(const char *message) {
     FILE *file = fopen("messages.log", "a");
