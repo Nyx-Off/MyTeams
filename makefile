@@ -7,7 +7,7 @@ CC = gcc
 CFLAGS = -Wall -g
 
 # Options de liaison
-LDLIBS = -lncurses
+LDLIBS = -lncurses -lsqlite3
 
 # Dossier pour les exécutables
 BIN_DIR = bin

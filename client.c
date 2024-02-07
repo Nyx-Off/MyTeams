@@ -20,10 +20,12 @@ void send_pseudo(int sock, char *pseudo);
 void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock);
 void handle_server_message(WINDOW *messages_win, int sock);
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
+void send_credentials(int sock, char *identifiant, char *mdp);
+
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
-        fprintf(stderr, "Usage: %s <Server Address> <Port> <Pseudo>\n", argv[0]);
+    if (argc != 5) { // Modifier ici pour accepter l'identifiant et le mdp comme arguments supplémentaires
+        fprintf(stderr, "Usage: %s <Server Address> <Port> <Identifiant> <MotDePasse>\n", argv[0]);
         return 1;
     }
 
@@ -32,12 +34,15 @@ int main(int argc, char *argv[]) {
 
     char *serverAddress = argv[1];
     int port = atoi(argv[2]);
-    char *pseudo = argv[3];
+    char *identifiant = argv[3];
+    char *mdp = argv[4];
     int sock;
     struct sockaddr_in serverAddr;
 
     init_connection(&sock, &serverAddr, serverAddress, port);
-    send_pseudo(sock, pseudo);
+
+    // Envoyer l'identifiant et le mdp au serveur avant le pseudo
+    send_credentials(sock, identifiant, mdp);
 
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
@@ -45,7 +50,7 @@ int main(int argc, char *argv[]) {
     WINDOW *input_win = newwin(1, max_x, max_y - 1, 0);
     scrollok(messages_win, TRUE);
 
-    wprintw(messages_win, "Connected to server %s:%d as %s\n", serverAddress, port, pseudo);
+    wprintw(messages_win, "Connected to server %s:%d as %s\n", serverAddress, port, identifiant);
     wrefresh(messages_win);
     wrefresh(input_win);
 
@@ -61,9 +66,7 @@ int main(int argc, char *argv[]) {
         tv.tv_sec = 5;
         tv.tv_usec = 0;
 
-        int select_result = select(fd_max + 1, &read_fds, NULL, NULL, &tv);
-
-        if (select_result == -1) {
+        if (select(fd_max + 1, &read_fds, NULL, NULL, &tv) == -1) {
             perror("select");
             break;
         }
@@ -79,6 +82,19 @@ int main(int argc, char *argv[]) {
 
     close_application(sock, input_win, messages_win);
     return 0;
+}
+
+
+void send_credentials(int sock, char *identifiant, char *mdp) {
+    // Concaténer identifiant et mdp séparés par un espace ou un autre séparateur
+    char credentials[1024]; // Assurez-vous que cela est suffisamment grand
+    sprintf(credentials, "%s %s", identifiant, mdp);
+    if (send(sock, credentials, strlen(credentials), 0) < 0) {
+        perror("send credentials");
+        close(sock);
+        endwin();
+        exit(1);
+    }
 }
 
 void initialize_ncurses() {

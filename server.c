@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <poll.h>
+#include <sqlite3.h>
 
 
 #define MAX_CLIENTS 30
@@ -30,6 +31,9 @@ void handle_client_message(int client_sock, fd_set *master_fds);
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo);
 void close_socket(int sock, fd_set *master_fds);
 void log_message(const char *message);
+int verify_credentials(char *identifiant, char *mdp, char *pseudo);
+int find_client_index(int sock);
+
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -93,6 +97,34 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+int verify_credentials(char *identifiant, char *mdp, char *pseudo) {
+    sqlite3 *db;
+    char *sql;
+    int result = 0;
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        sql = "SELECT pseudo FROM utilisateurs WHERE identifiant = ? AND mdp = ?";
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, identifiant, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, mdp, -1, SQLITE_STATIC);
+
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char *retrieved_pseudo = (const char *)sqlite3_column_text(stmt, 0);
+                if (retrieved_pseudo) {
+                    strncpy(pseudo, retrieved_pseudo, PSEUDO_SIZE - 1);
+                    pseudo[PSEUDO_SIZE - 1] = '\0';
+                    result = 1;
+                }
+            }
+            sqlite3_finalize(stmt);
+        }
+        sqlite3_close(db);
+    }
+    return result;
+}
+
+
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
     *server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (*server_sock < 0) {
@@ -133,6 +165,7 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     int client_sock;
     struct sockaddr_in client_addr;
     socklen_t client_addr_size = sizeof(client_addr);
+    char buffer[1024]; // Assez grand pour identifiant + mdp
 
     client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_size);
     if (client_sock < 0) {
@@ -141,16 +174,50 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
         return;
     }
 
+    // Lire les identifiants du client
+    ssize_t len = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
+    if (len <= 0) {
+        close_socket(client_sock, master_fds);
+        return;
+    }
+    buffer[len] = '\0';
+
+    char identifiant[BUFFER_SIZE] = {0}, mdp[BUFFER_SIZE] = {0}, pseudo[PSEUDO_SIZE] = {0};
+
+    // Extraire identifiant et mdp depuis le buffer
+    sscanf(buffer, "%s %s", identifiant, mdp);
+
+    if (!verify_credentials(identifiant, mdp, pseudo)) {
+        wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        wprintw(stdscr, "Échec de la vérification des identifiants pour la socket %d\n", client_sock);
+        wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+        close_socket(client_sock, master_fds);
+        return;
+    }
+
+    // Ajout du nouveau client
     FD_SET(client_sock, master_fds);
-    client_socks[total_clients++] = client_sock;
     if (client_sock > *fd_max) {
         *fd_max = client_sock;
     }
+    client_socks[total_clients] = client_sock;
+    strncpy(client_pseudos[total_clients], pseudo, PSEUDO_SIZE);
+    total_clients++;
 
     wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-    wprintw(stdscr, "Nouveau client connecté : socket %d\n", client_sock);
+    wprintw(stdscr, "Client connecté : %s (socket %d)\n", pseudo, client_sock);
     wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wrefresh(stdscr);
+}
+
+
+find_client_index_by_sock(int sock) {
+    for (int i = 0; i < total_clients; i++) {
+        if (client_socks[i] == sock) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 void handle_client_message(int client_sock, fd_set *master_fds) {
@@ -170,34 +237,27 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         }
         close_socket(client_sock, master_fds); // Fermer la socket du client
     } else {
-        // Le client a envoyé un message, len est le nombre d'octets reçus
-        buffer[len] = '\0'; // S'assurer que le message est terminé par un caractère nul
+        buffer[len] = '\0'; // Assurer la fin de chaîne du message
 
-        // Vérifier si le client a déjà un pseudo
-        if (client_pseudos[client_sock][0] == '\0') {
-            strncpy(client_pseudos[client_sock], buffer, PSEUDO_SIZE - 1);
-            client_pseudos[client_sock][PSEUDO_SIZE - 1] = '\0'; // Assurer la fin de chaîne
-            wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-            wprintw(stdscr, "Pseudo '%s' attribué au client %d\n", buffer, client_sock);
-            wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-        } else {
-            // Construire le message complet avec pseudo et message
-            char full_message[FULL_MESSAGE_SIZE];
-            snprintf(full_message, sizeof(full_message), "%s: %s", client_pseudos[client_sock], buffer);
-
-            // Afficher le message avec le pseudo du client
-            wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-            wprintw(stdscr, "%s\n", full_message);
-            wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-
-            // Enregistrer le message dans le fichier de log avec l'horodatage
-            log_message(full_message);
-
-            // Diffuser le message avec le pseudo à tous les autres clients
-            broadcast_message(client_sock, buffer, client_pseudos[client_sock]);
+        int client_index = find_client_index_by_sock(client_sock);
+        if (client_index == -1) {
+            // Gérer l'erreur: client introuvable
+            printf("Erreur: Client introuvable.\n");
+            return;
         }
+
+        // Construire et afficher le message complet avec le pseudo
+        char full_message[FULL_MESSAGE_SIZE];
+        snprintf(full_message, sizeof(full_message), "%s: %s", client_pseudos[client_index], buffer);
+
+        wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        wprintw(stdscr, "%s\n", full_message);
+        wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+
+        log_message(full_message);
+        broadcast_message(client_sock, buffer, client_pseudos[client_index]);
     }
-    wrefresh(stdscr); // Rafraîchir la fenêtre après chaque modification
+    wrefresh(stdscr);
 }
 
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
@@ -230,7 +290,6 @@ void close_socket(int sock, fd_set *master_fds) {
         }
     }
 }
-
 
 void log_message(const char *message) {
     FILE *file = fopen("messages.log", "a");
