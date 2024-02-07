@@ -182,9 +182,13 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/info") == 0) {
         send(sock, "/server_info", strlen("/server_info"), 0); // Envoyer la commande spéciale au serveur
     }
-    if (strcmp(input_buffer, "/help") || strcmp(input_buffer, "/?")) {
+    if (strcmp(input_buffer, "/help") == 0) {
         send(sock, "/help", strlen("/help"), 0); // Envoyer la commande spéciale au serveur
     }
+    if (strncmp(input_buffer, "/nickname", 9) == 0) {
+    // Envoyer la commande au serveur pour traitement
+        send(sock, input_buffer, strlen(input_buffer), 0);
+    }   
     else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);

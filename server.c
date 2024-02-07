@@ -38,7 +38,9 @@ void close_socket(int sock, fd_set *master_fds);
 void log_message(const char *message);
 int verify_credentials(char *identifiant, char *mdp, char *pseudo);
 int find_client_index(int sock);
-
+int check_pseudo_availability(char *pseudo);
+void update_pseudo_in_db(int userId, char *newPseudo);
+int get_user_id_by_pseudo(const char *pseudo);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -231,6 +233,10 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
    
     int port = 4242;
     char buffer[BUFFER_SIZE] = {0};
+
+    char newPseudo[PSEUDO_SIZE] = {0};
+    char confirmationPseudo[PSEUDO_SIZE] = {0};
+
     // Réception du message du client
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
 
@@ -264,6 +270,24 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         strcat(response, "/info : Informations sur le serveur\n");
         strcat(response, "/help : Liste des commandes disponibles\n");
         send(client_sock, response, strlen(response), 0);
+    }
+
+    if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
+        if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
+            // Récupérer l'ID de l'utilisateur à partir de la base de données
+            int userId = get_user_id_by_pseudo(client_pseudos[find_client_index_by_sock(client_sock)]);
+            if (userId != -1) {
+                // Mise à jour du pseudo dans la BDD
+                update_pseudo_in_db(userId, newPseudo);
+                // Mise à jour du pseudo dans la liste des clients connectés
+                strncpy(client_pseudos[find_client_index_by_sock(client_sock)], newPseudo, PSEUDO_SIZE);
+                send(client_sock, "Votre pseudo a été mis à jour avec succès.", 45, 0);
+            } else {
+                send(client_sock, "Erreur: Impossible de trouver votre ID utilisateur.", 55, 0);
+            }
+        } else {
+            send(client_sock, "Erreur: Le pseudo est déjà pris ou les pseudos ne correspondent pas.", 68, 0);
+        }
     }
 
     if (len <= 0) {
@@ -300,6 +324,72 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
     }
     wrefresh(stdscr);
 }
+
+int get_user_id_by_pseudo(const char *pseudo) {
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT id FROM utilisateurs WHERE pseudo = ?";
+    int userId = -1;
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                userId = sqlite3_column_int(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+        sqlite3_close(db);
+    }
+
+    return userId;
+}
+
+int check_pseudo_availability(char *pseudo) {
+    sqlite3 *db;
+    char *sql = "SELECT COUNT(*) FROM utilisateurs WHERE pseudo = ?";
+    sqlite3_stmt *stmt;
+    int count = 1; // Supposer pseudo non disponible
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                count = sqlite3_column_int(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+        sqlite3_close(db);
+    }
+    return count == 0; // Retourne 1 (true) si le pseudo est disponible
+}
+
+void update_pseudo_in_db(int userId, char *newPseudo) {
+    sqlite3 *db;
+    char *sql = "UPDATE utilisateurs SET pseudo = ? WHERE id = ?";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, newPseudo, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 2, userId);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                fprintf(stderr, "Erreur lors de la mise à jour du pseudo.\n");
+            } else {
+                printf("Pseudo mis à jour avec succès.\n");
+            }
+
+            sqlite3_finalize(stmt);
+        } else {
+            fprintf(stderr, "Erreur lors de la préparation de la mise à jour du pseudo.\n");
+        }
+        sqlite3_close(db);
+    }
+}
+
+
+
 
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
     for (int i = 0; i < total_clients; i++) {
