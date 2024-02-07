@@ -25,6 +25,11 @@ int client_socks[MAX_CLIENTS] = {0};
 char client_pseudos[MAX_CLIENTS][PSEUDO_SIZE] = {0};
 int total_clients = 0;
 
+char *motd = "Bienvenue sur le serveur!";
+time_t server_start_time;
+int max_clients = MAX_CLIENTS;
+
+
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port);
 void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max);
 void handle_client_message(int client_sock, fd_set *master_fds);
@@ -40,6 +45,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s <Port>\n", argv[0]);
         return 1;
     }
+
+    server_start_time = time(NULL);
 
     int port = atoi(argv[1]);
     int server_sock;
@@ -211,7 +218,7 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
 }
 
 
-find_client_index_by_sock(int sock) {
+int find_client_index_by_sock(int sock) {
     for (int i = 0; i < total_clients; i++) {
         if (client_socks[i] == sock) {
             return i;
@@ -221,9 +228,43 @@ find_client_index_by_sock(int sock) {
 }
 
 void handle_client_message(int client_sock, fd_set *master_fds) {
+   
+    int port = 4242;
     char buffer[BUFFER_SIZE] = {0};
     // Réception du message du client
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
+
+    if (strcmp(buffer, "/who") == 0) {
+        // Construire la réponse avec la liste des utilisateurs connectés
+        char response[BUFFER_SIZE] = "Utilisateurs connectés : \n";
+        for (int i = 0; i < total_clients; i++) {
+            strcat(response, client_pseudos[i]);
+            strcat(response, "\n");
+        }
+        // Envoyer la réponse uniquement au client qui a demandé
+        send(client_sock, response, strlen(response), 0);
+    }
+
+    if (strcmp(buffer, "/info") == 0) {
+        char response[BUFFER_SIZE];
+        int uptime_seconds = difftime(time(NULL), server_start_time);
+        int hours = uptime_seconds / 3600;
+        int minutes = (uptime_seconds % 3600) / 60;
+        int seconds = uptime_seconds % 60;
+
+        snprintf(response, BUFFER_SIZE, "IP: %s\nPort: %d\nMOTD: %s\nUptime: %02d:%02d:%02d\nClients: %d/%d\n", 
+                 "127.0.0.1", port, motd, hours, minutes, seconds, total_clients, max_clients);
+
+        send(client_sock, response, strlen(response), 0);
+    }
+
+    if (strcmp(buffer, "/help") == 0 ) {
+        char response[BUFFER_SIZE] = "Commandes disponibles :\n";
+        strcat(response, "/who : Liste des utilisateurs connectés\n");
+        strcat(response, "/info : Informations sur le serveur\n");
+        strcat(response, "/help : Liste des commandes disponibles\n");
+        send(client_sock, response, strlen(response), 0);
+    }
 
     if (len <= 0) {
         // Si len est 0, le client s'est déconnecté proprement

@@ -175,7 +175,17 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/exit") == 0) {
         close_application(sock, input_win, messages_win);
         exit(0);
-    } else if (strlen(input_buffer) > 0) {
+    }
+    if (strcmp(input_buffer, "/who") == 0) {
+        send(sock, "/who", strlen("/who"), 0); // Envoyer la commande spéciale au serveur
+    } 
+    if (strcmp(input_buffer, "/info") == 0) {
+        send(sock, "/server_info", strlen("/server_info"), 0); // Envoyer la commande spéciale au serveur
+    }
+    if (strcmp(input_buffer, "/help") || strcmp(input_buffer, "/?")) {
+        send(sock, "/help", strlen("/help"), 0); // Envoyer la commande spéciale au serveur
+    }
+    else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);
         wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
