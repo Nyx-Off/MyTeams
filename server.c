@@ -253,13 +253,13 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
 
     
 
-    if (strcmp(buffer, "/help") == 0 ) {
-        char response[BUFFER_SIZE] = "Commandes disponibles :\n";
-        strcat(response, "/who : Liste des utilisateurs connectés\n");
-        strcat(response, "/info : Informations sur le serveur\n");
-        strcat(response, "/help : Liste des commandes disponibles\n");
-        send(client_sock, response, strlen(response), 0);
-    }
+   // if (strcmp(buffer, "/help") == 0 ) {
+   //     char response[BUFFER_SIZE] = "Commandes disponibles :\n";
+   //     strcat(response, "/who : Liste des utilisateurs connectés\n");
+   //     strcat(response, "/info : Informations sur le serveur\n");
+   //     strcat(response, "/help : Liste des commandes disponibles\n");
+   //     send(client_sock, response, strlen(response), 0);
+   // }
 
     if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
         if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
@@ -310,6 +310,14 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                     "127.0.0.1", port, motd, hours, minutes, seconds, total_clients, max_clients);
 
             send(client_sock, response, strlen(response), 0); // Envoyer uniquement au demandeur
+            return;
+        }
+        if (strncmp(buffer, "/help" , 5) == 0 ) {
+            char response[BUFFER_SIZE] = "Commandes disponibles :\n";
+            strcat(response, "/who : Liste des utilisateurs connectés\n");
+            strcat(response, "/info : Informations sur le serveur\n");
+            strcat(response, "/help : Liste des commandes disponibles\n");
+            send(client_sock, response, strlen(response), 0);
             return;
         }
 

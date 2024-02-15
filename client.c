@@ -176,12 +176,6 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
         close_application(sock, input_win, messages_win);
         exit(0);
     }
-    if (strcmp(input_buffer, "/who") == 0) {
-        send(sock, "/who", strlen("/who"), 0); // Envoyer la commande spéciale au serveur
-    } 
-    if (strcmp(input_buffer, "/help") == 0) {
-        send(sock, "/help", strlen("/help"), 0); // Envoyer la commande spéciale au serveur
-    }
     if (strncmp(input_buffer, "/nickname", 9) == 0) {
     // Envoyer la commande au serveur pour traitement
         send(sock, input_buffer, strlen(input_buffer), 0);
