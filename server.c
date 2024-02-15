@@ -240,26 +240,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
     // Réception du message du client
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
 
-    
-
-    if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
-        if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
-            // Récupérer l'ID de l'utilisateur à partir de la base de données
-            int userId = get_user_id_by_pseudo(client_pseudos[find_client_index_by_sock(client_sock)]);
-            if (userId != -1) {
-                // Mise à jour du pseudo dans la BDD
-                update_pseudo_in_db(userId, newPseudo);
-                // Mise à jour du pseudo dans la liste des clients connectés
-                strncpy(client_pseudos[find_client_index_by_sock(client_sock)], newPseudo, PSEUDO_SIZE);
-                send(client_sock, "Votre pseudo a été mis à jour avec succès.", 45, 0);
-            } else {
-                send(client_sock, "Erreur: Impossible de trouver votre ID utilisateur.", 55, 0);
-            }
-        } else {
-            send(client_sock, "Erreur: Le pseudo est déjà pris ou les pseudos ne correspondent pas.", 68, 0);
-        }
-    }
-
     if (len <= 0) {
         // Si len est 0, le client s'est déconnecté proprement
         if (len == 0) {
@@ -314,6 +294,27 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             // Envoyer la réponse uniquement au client qui a demandé
             send(client_sock, response, strlen(response), 0);
             return;
+        }
+
+        if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
+            if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
+                // Récupérer l'ID de l'utilisateur à partir de la base de données
+                int userId = get_user_id_by_pseudo(client_pseudos[find_client_index_by_sock(client_sock)]);
+                if (userId != -1) {
+                    // Mise à jour du pseudo dans la BDD
+                    update_pseudo_in_db(userId, newPseudo);
+                    // Mise à jour du pseudo dans la liste des clients connectés
+                    strncpy(client_pseudos[find_client_index_by_sock(client_sock)], newPseudo, PSEUDO_SIZE);
+                    send(client_sock, "Votre pseudo a été mis à jour avec succès.", 45, 0);
+                    return;
+                } else {
+                    send(client_sock, "Erreur: Impossible de trouver votre ID utilisateur.", 55, 0);
+                    return;
+                }
+            } else {
+                send(client_sock, "Erreur: Le pseudo est déjà pris ou les pseudos ne correspondent pas.", 68, 0);
+                return;
+            }
         }
 
         // Construire et afficher le message complet avec le pseudo
