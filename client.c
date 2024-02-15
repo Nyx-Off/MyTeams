@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <ncurses.h>
 #include <ctype.h>
+#include <arpa/inet.h>
 
 #define BUFFER_SIZE 1024
 #define RECEIVED_MSG_COLOR_PAIR 1
@@ -82,7 +83,6 @@ int main(int argc, char *argv[]) {
     close_application(sock, input_win, messages_win);
     return 0;
 }
-
 
 void send_credentials(int sock, char *identifiant, char *mdp) {
     // Concaténer identifiant et mdp séparés par un espace ou un autre séparateur

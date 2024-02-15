@@ -10,7 +10,6 @@
 #include <time.h>
 #include <sqlite3.h>
 
-
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
 #define PSEUDO_SIZE 32
@@ -39,6 +38,9 @@ int find_client_index(int sock);
 int check_pseudo_availability(char *pseudo);
 void update_pseudo_in_db(int userId, char *newPseudo);
 int get_user_id_by_pseudo(const char *pseudo);
+int create_user(const char *permission, const char *identifiant, const char *pseudo, const char *mdp);
+int is_user_admin(const char *pseudo);
+
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -294,6 +296,9 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             return;
         }
 
+
+
+
         if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
             if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
                 // Récupérer l'ID de l'utilisateur à partir de la base de données
@@ -313,7 +318,54 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                 send(client_sock, "Erreur: Le pseudo est déjà pris ou les pseudos ne correspondent pas.", 68, 0);
                 return;
             }
-        }
+        }      
+
+        if (strncmp(buffer, "/createuser", 11) == 0) {
+            if (is_user_admin(client_pseudos[client_index])) {
+                // Extraire les détails de la commande
+                char permission[BUFFER_SIZE], identifiant[BUFFER_SIZE], confIdentifiant[BUFFER_SIZE],
+                    pseudo[BUFFER_SIZE], confPseudo[BUFFER_SIZE], mdp[BUFFER_SIZE], confMdp[BUFFER_SIZE];
+
+                if (sscanf(buffer, "/createuser %s %s %s %s %s %s %s", permission, identifiant, confIdentifiant,pseudo, confPseudo, mdp, confMdp) == 7) {
+                    // Valider et créer le compte utilisateur...
+                    if (strcmp(identifiant, confIdentifiant) == 0 && strcmp(pseudo, confPseudo) == 0 && strcmp(mdp, confMdp) == 0) {
+                        // Appeler une fonction pour créer l'utilisateur dans la base de données
+                        // Assurez-vous que cette fonction vérifie également l'unicité de l'identifiant et du pseudo
+                        int creationStatus = create_user(permission, identifiant, pseudo, mdp);
+                        if (creationStatus == 0) {
+                            // Envoi d'un message de succès au client
+                            char successMsg[BUFFER_SIZE] = "Utilisateur créé avec succès.\n";
+                            send(client_sock, successMsg, strlen(successMsg), 0);
+                            return;
+                        } 
+                        else {
+                            // Envoi d'un message d'erreur au client
+                            char errorMsg[BUFFER_SIZE] = "Erreur lors de la création de l'utilisateur.\n";
+                            send(client_sock, errorMsg, strlen(errorMsg), 0);
+                            return;
+                        }
+                    } 
+                    else {
+                        // Envoi d'un message d'erreur de validation au client
+                        char validationMsg[BUFFER_SIZE] = "Erreur de validation des données.\n";
+                        send(client_sock, validationMsg, strlen(validationMsg), 0);
+                        return;
+                    }
+                } 
+                else {
+                    // Commande incomplète ou incorrecte
+                    char errorMsg[BUFFER_SIZE] = "Commande /createuser format incorrect.\n";
+                    send(client_sock, errorMsg, strlen(errorMsg), 0);
+                    return;
+                }
+            }
+            else {
+                // Envoi d'un message d'erreur au client
+                char errorMsg[BUFFER_SIZE] = "Vous n'êtes pas autorisé à exécuter cette commande.\n";
+                send(client_sock, errorMsg, strlen(errorMsg), 0);
+                return;
+            }
+        }  
 
         // Construire et afficher le message complet avec le pseudo
         char full_message[FULL_MESSAGE_SIZE];
@@ -348,6 +400,69 @@ int get_user_id_by_pseudo(const char *pseudo) {
 
     return userId;
 }
+
+
+int is_user_admin(const char *pseudo) {
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT permission FROM utilisateurs WHERE pseudo = ?";
+    int isAdmin = 0; // Par défaut, l'utilisateur n'est pas admin
+    
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
+            
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char *permission = (const char *)sqlite3_column_text(stmt, 0);
+                isAdmin = strcmp(permission, "admin") == 0; // Vérifie si la permission est "admin"
+            }
+            
+            sqlite3_finalize(stmt);
+        }
+        sqlite3_close(db);
+    }
+    
+    return isAdmin;
+}
+
+int create_user(const char *permission, const char *identifiant, const char *pseudo, const char *mdp) {
+    sqlite3 *db;
+    //char *err_msg = 0;
+    int rc = sqlite3_open("MyTeams.db", &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -1; // Échec de l'ouverture de la base de données
+    }
+
+    char *sql = "INSERT INTO utilisateurs (permission, identifiant, pseudo, mdp) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt *stmt;
+
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc == SQLITE_OK) {
+        // Binder les paramètres
+        sqlite3_bind_text(stmt, 1, permission, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, identifiant, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, pseudo, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, mdp, -1, SQLITE_STATIC);
+    } else {
+        fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        printf("ERROR inserting data: %s\n", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -2; // Échec de l'insertion
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    return 0; // Succès
+}
+
 
 int check_pseudo_availability(char *pseudo) {
     sqlite3 *db;
