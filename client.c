@@ -179,9 +179,6 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/who") == 0) {
         send(sock, "/who", strlen("/who"), 0); // Envoyer la commande spéciale au serveur
     } 
-    if (strcmp(input_buffer, "/info") == 0) {
-        send(sock, "/server_info", strlen("/server_info"), 0); // Envoyer la commande spéciale au serveur
-    }
     if (strcmp(input_buffer, "/help") == 0) {
         send(sock, "/help", strlen("/help"), 0); // Envoyer la commande spéciale au serveur
     }

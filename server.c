@@ -251,18 +251,7 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         send(client_sock, response, strlen(response), 0);
     }
 
-    if (strcmp(buffer, "/info") == 0) {
-        char response[BUFFER_SIZE];
-        int uptime_seconds = difftime(time(NULL), server_start_time);
-        int hours = uptime_seconds / 3600;
-        int minutes = (uptime_seconds % 3600) / 60;
-        int seconds = uptime_seconds % 60;
-
-        snprintf(response, BUFFER_SIZE, "IP: %s\nPort: %d\nMOTD: %s\nUptime: %02d:%02d:%02d\nClients: %d/%d\n", 
-                 "127.0.0.1", port, motd, hours, minutes, seconds, total_clients, max_clients);
-
-        send(client_sock, response, strlen(response), 0);
-    }
+    
 
     if (strcmp(buffer, "/help") == 0 ) {
         char response[BUFFER_SIZE] = "Commandes disponibles :\n";
@@ -308,6 +297,19 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         if (client_index == -1) {
             // Gérer l'erreur: client introuvable
             printf("Erreur: Client introuvable.\n");
+            return;
+        }
+        if (strncmp(buffer, "/info", 5) == 0) {
+            char response[BUFFER_SIZE];
+            int uptime_seconds = difftime(time(NULL), server_start_time);
+            int hours = uptime_seconds / 3600;
+            int minutes = (uptime_seconds % 3600) / 60;
+            int seconds = uptime_seconds % 60;
+
+            snprintf(response, BUFFER_SIZE, "IP: %s\nPort: %d\nMOTD: %s\nUptime: %02d:%02d:%02d\nClients: %d/%d\n", 
+                    "127.0.0.1", port, motd, hours, minutes, seconds, total_clients, max_clients);
+
+            send(client_sock, response, strlen(response), 0); // Envoyer uniquement au demandeur
             return;
         }
 
@@ -364,6 +366,8 @@ int check_pseudo_availability(char *pseudo) {
     return count == 0; // Retourne 1 (true) si le pseudo est disponible
 }
 
+#include <ncurses.h>
+
 void update_pseudo_in_db(int userId, char *newPseudo) {
     sqlite3 *db;
     char *sql = "UPDATE utilisateurs SET pseudo = ? WHERE id = ?";
@@ -375,19 +379,21 @@ void update_pseudo_in_db(int userId, char *newPseudo) {
             sqlite3_bind_int(stmt, 2, userId);
 
             if (sqlite3_step(stmt) != SQLITE_DONE) {
-                fprintf(stderr, "Erreur lors de la mise à jour du pseudo.\n");
+                // Erreur lors de la mise à jour du pseudo.
+                printw("Erreur lors de la mise à jour du pseudo.\n");
             } else {
-                printf("Pseudo mis à jour avec succès.\n");
+                // Pseudo mis à jour avec succès.
+                printw("Pseudo mis à jour avec succès.\n");
             }
 
             sqlite3_finalize(stmt);
         } else {
-            fprintf(stderr, "Erreur lors de la préparation de la mise à jour du pseudo.\n");
+            // Erreur lors de la préparation de la mise à jour du pseudo.
+            printw("Erreur lors de la préparation de la mise à jour du pseudo.\n");
         }
         sqlite3_close(db);
     }
 }
-
 
 
 
