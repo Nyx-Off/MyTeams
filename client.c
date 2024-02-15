@@ -12,6 +12,7 @@
 #define BUFFER_SIZE 1024
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
+#define ADMIN_MSG_COLOR_PAIR 3
 
 void initialize_ncurses();
 void setup_color_pairs();
@@ -107,6 +108,8 @@ void initialize_ncurses() {
 void setup_color_pairs() {
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
+    init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
+
 }
 
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port) {
@@ -174,11 +177,7 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/exit") == 0) {
         close_application(sock, input_win, messages_win);
         exit(0);
-    }
-    if (strncmp(input_buffer, "/nickname", 9) == 0) {
-    // Envoyer la commande au serveur pour traitement
-        send(sock, input_buffer, strlen(input_buffer), 0);
-    }   
+    } 
     else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);
@@ -201,12 +200,19 @@ void handle_server_message(WINDOW *messages_win, int sock) {
         close_application(sock, NULL, messages_win);
         exit(0);
     } else {
-        wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-        wprintw(messages_win, "%s\n", buffer);
-        wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        if (strncmp(buffer, "ADMIN: ", 7) == 0) {
+            wattron(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
+            wprintw(messages_win, "%s\n", buffer + 7); // +7 pour ignorer le préfixe "ADMIN: "
+            wattroff(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
+        } else {
+            wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+            wprintw(messages_win, "%s\n", buffer);
+            wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        }
         wrefresh(messages_win);
     }
 }
+
 
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win) {
     if (input_win != NULL) {

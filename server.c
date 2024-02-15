@@ -17,6 +17,7 @@
 
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
+#define ADMIN_MSG_COLOR_PAIR 3
 
 int client_socks[MAX_CLIENTS] = {0};
 char client_pseudos[MAX_CLIENTS][PSEUDO_SIZE] = {0};
@@ -61,6 +62,7 @@ int main(int argc, char *argv[]) {
     start_color();
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
+    init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
 
     scrollok(stdscr, TRUE);
 
@@ -367,18 +369,25 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             }
         }  
 
-        // Construire et afficher le message complet avec le pseudo
+        int isAdmin = is_user_admin(client_pseudos[client_index]);
         char full_message[FULL_MESSAGE_SIZE];
         snprintf(full_message, sizeof(full_message), "%s: %s", client_pseudos[client_index], buffer);
 
-        wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
-        wprintw(stdscr, "%s\n", full_message);
-        wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        if (isAdmin) {
+            wattron(stdscr, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR)); // Utiliser la couleur rouge pour les admins
+            wprintw(stdscr, "%s\n", full_message);
+            wattroff(stdscr, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
+        } else {
+            wattron(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR)); // Couleur par défaut pour les autres utilisateurs
+            wprintw(stdscr, "%s\n", full_message);
+            wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
+        }
 
-        log_message(full_message);
-        broadcast_message(client_sock, buffer, client_pseudos[client_index]);
+        log_message(full_message); // Log le message comme avant
+        broadcast_message(client_sock, buffer, client_pseudos[client_index]); // Broadcast le message comme avant
+
+        wrefresh(stdscr); // Rafraîchir l'écran après l'ajout du message
     }
-    wrefresh(stdscr);
 }
 
 int get_user_id_by_pseudo(const char *pseudo) {
@@ -515,10 +524,18 @@ void update_pseudo_in_db(int userId, char *newPseudo) {
 
 
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
+    int isAdmin = is_user_admin(sender_pseudo); // Vérifie si l'expéditeur est un admin
+    char full_message[BUFFER_SIZE + PSEUDO_SIZE + 10]; // +10 pour préfixe potentiel et espace supplémentaire
+
+    // Préfixer le message avec "ADMIN:" si l'expéditeur est un administrateur
+    if (isAdmin) {
+        snprintf(full_message, sizeof(full_message), "ADMIN: %s: %s", sender_pseudo, message);
+    } else {
+        snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message);
+    }
+
     for (int i = 0; i < total_clients; i++) {
         if (client_socks[i] != sender_sock) {
-            char full_message[BUFFER_SIZE + PSEUDO_SIZE];
-            snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message); // Concaténer le pseudo et le message
             send(client_socks[i], full_message, strlen(full_message), 0);
         }
     }
