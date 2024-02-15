@@ -251,16 +251,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         send(client_sock, response, strlen(response), 0);
     }
 
-    
-
-   // if (strcmp(buffer, "/help") == 0 ) {
-   //     char response[BUFFER_SIZE] = "Commandes disponibles :\n";
-   //     strcat(response, "/who : Liste des utilisateurs connectés\n");
-   //     strcat(response, "/info : Informations sur le serveur\n");
-   //     strcat(response, "/help : Liste des commandes disponibles\n");
-   //     send(client_sock, response, strlen(response), 0);
-   // }
-
     if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
         if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
             // Récupérer l'ID de l'utilisateur à partir de la base de données
@@ -317,6 +307,8 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             strcat(response, "/who : Liste des utilisateurs connectés\n");
             strcat(response, "/info : Informations sur le serveur\n");
             strcat(response, "/help : Liste des commandes disponibles\n");
+            strcat(response, "/exit : Déconnexion du serveur\n");
+            strcat(response, "/nickname <nouveau_pseudo> <confirmation> : Changer de pseudo\n");
             send(client_sock, response, strlen(response), 0);
             return;
         }
