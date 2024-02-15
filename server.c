@@ -240,16 +240,7 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
     // Réception du message du client
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
 
-    if (strcmp(buffer, "/who") == 0) {
-        // Construire la réponse avec la liste des utilisateurs connectés
-        char response[BUFFER_SIZE] = "Utilisateurs connectés : \n";
-        for (int i = 0; i < total_clients; i++) {
-            strcat(response, client_pseudos[i]);
-            strcat(response, "\n");
-        }
-        // Envoyer la réponse uniquement au client qui a demandé
-        send(client_sock, response, strlen(response), 0);
-    }
+    
 
     if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
         if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
@@ -309,6 +300,18 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             strcat(response, "/help : Liste des commandes disponibles\n");
             strcat(response, "/exit : Déconnexion du serveur\n");
             strcat(response, "/nickname <nouveau_pseudo> <confirmation> : Changer de pseudo\n");
+            send(client_sock, response, strlen(response), 0);
+            return;
+        }
+
+        if (strncmp(buffer, "/who", 3) == 0) {
+        // Construire la réponse avec la liste des utilisateurs connectés
+            char response[BUFFER_SIZE] = "Utilisateurs connectés : \n";
+            for (int i = 0; i < total_clients; i++) {
+                strcat(response, client_pseudos[i]);
+                strcat(response, "\n");
+            }
+            // Envoyer la réponse uniquement au client qui a demandé
             send(client_sock, response, strlen(response), 0);
             return;
         }
