@@ -17,7 +17,6 @@
 void initialize_ncurses();
 void setup_color_pairs();
 void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddress, int port);
-void send_pseudo(int sock, char *pseudo);
 void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock);
 void handle_server_message(WINDOW *messages_win, int sock);
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
@@ -139,15 +138,6 @@ void init_connection(int *sock, struct sockaddr_in *serverAddr, char *serverAddr
     if (connect(*sock, (struct sockaddr *)serverAddr, sizeof(*serverAddr)) < 0) {
         perror("connect");
         close(*sock);
-        endwin();
-        exit(1);
-    }
-}
-
-void send_pseudo(int sock, char *pseudo) {
-    if (send(sock, pseudo, strlen(pseudo), 0) < 0) {
-        perror("send pseudo");
-        close(sock);
         endwin();
         exit(1);
     }
