@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <sqlite3.h>
+#include <openssl/sha.h>
 
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
@@ -41,6 +42,8 @@ void update_pseudo_in_db(int userId, char *newPseudo);
 int get_user_id_by_pseudo(const char *pseudo);
 int create_user(const char *permission, const char *identifiant, const char *pseudo, const char *mdp);
 int is_user_admin(const char *pseudo);
+void hash_password(const char* password, char hashedOutput[65]);
+void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
 
 
 int main(int argc, char *argv[]) {
@@ -107,6 +110,25 @@ int main(int argc, char *argv[]) {
     endwin(); // Fermeture de ncurses
     return 0;
 }
+
+void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]) {
+    int i;
+    for(i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(outputBuffer + (i * 2), "%02x", hash[i]);
+    }
+    outputBuffer[64] = 0;
+}
+
+void hash_password(const char* password, char hashedOutput[65]) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, password, strlen(password));
+    SHA256_Final(hash, &sha256);
+    sha256_to_string(hash, hashedOutput);
+}
+
+
 
 int verify_credentials(char *identifiant, char *mdp, char *pseudo) {
     sqlite3 *db;
@@ -276,14 +298,28 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             return;
         }
         if (strncmp(buffer, "/help" , 5) == 0 ) {
-            char response[BUFFER_SIZE] = "Commandes disponibles :\n";
-            strcat(response, "/who : Liste des utilisateurs connectés\n");
-            strcat(response, "/info : Informations sur le serveur\n");
-            strcat(response, "/help : Liste des commandes disponibles\n");
-            strcat(response, "/exit : Déconnexion du serveur\n");
-            strcat(response, "/nickname <nouveau_pseudo> <confirmation> : Changer de pseudo\n");
-            send(client_sock, response, strlen(response), 0);
-            return;
+            if (is_user_admin(client_pseudos[client_index])) {
+                char response[BUFFER_SIZE] = "Commandes disponibles :\n";
+                strcat(response, "/who : Liste des utilisateurs connectés\n");
+                strcat(response, "/info : Informations sur le serveur\n");
+                strcat(response, "/help : Liste des commandes disponibles\n");
+                strcat(response, "/exit : Déconnexion du serveur\n");
+                strcat(response, "/nickname <nouveau_pseudo> <confirmation> : Changer de pseudo\n");
+                strcat(response, "/createuser <permission> <identifiant> <confirmation_identifiant> <pseudo> <confirmation_pseudo> <mdp> <confirmation_mdp> : Créer un nouvel utilisateur\n");
+                send(client_sock, response, strlen(response), 0);
+                return;
+            }
+            else {
+                char response[BUFFER_SIZE] = "Commandes disponibles :\n";
+                strcat(response, "/who : Liste des utilisateurs connectés\n");
+                strcat(response, "/info : Informations sur le serveur\n");
+                strcat(response, "/help : Liste des commandes disponibles\n");
+                strcat(response, "/exit : Déconnexion du serveur\n");
+                strcat(response, "/nickname <nouveau_pseudo> <confirmation> : Changer de pseudo\n");
+                send(client_sock, response, strlen(response), 0);
+                return;
+            }
+            
         }
 
         if (strncmp(buffer, "/who", 3) == 0) {
@@ -447,13 +483,16 @@ int create_user(const char *permission, const char *identifiant, const char *pse
     char *sql = "INSERT INTO utilisateurs (permission, identifiant, pseudo, mdp) VALUES (?, ?, ?, ?);";
     sqlite3_stmt *stmt;
 
+    char hashedPassword[65];
+    hash_password(mdp, hashedPassword);
+
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
     if (rc == SQLITE_OK) {
         // Binder les paramètres
         sqlite3_bind_text(stmt, 1, permission, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, identifiant, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 3, pseudo, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 4, mdp, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, hashedPassword, -1, SQLITE_STATIC);
     } else {
         fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
     }

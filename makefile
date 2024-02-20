@@ -7,7 +7,7 @@ CC = gcc
 CFLAGS = -Wall -g
 
 # Options de liaison
-LDLIBS = -lncurses -lsqlite3
+LDLIBS = -lncurses -lsqlite3 -lssl -lcrypto
 
 # Dossier pour les exécutables
 BIN_DIR = bin
@@ -24,11 +24,13 @@ all: server client
 
 # Règle pour construire le serveur
 server: deps
-	$(CC) $(CFLAGS) server.c $(LDLIBS) -o $(BIN_DIR)/server
+	$(CC) $(CFLAGS) server.c $(LDLIBS) -o $(BIN_DIR)/server -Wno-deprecated-declarations
+
 
 # Règle pour construire le client
 client: deps
-	$(CC) $(CFLAGS) client.c $(LDLIBS) -o $(BIN_DIR)/client
+	$(CC) $(CFLAGS) client.c $(LDLIBS) -o $(BIN_DIR)/client -Wno-deprecated-declarations
+
 
 # Règle pour nettoyer les fichiers compilés
 clean:

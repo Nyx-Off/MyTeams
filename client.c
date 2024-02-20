@@ -8,6 +8,7 @@
 #include <ncurses.h>
 #include <ctype.h>
 #include <arpa/inet.h>
+#include <openssl/sha.h>
 
 #define BUFFER_SIZE 1024
 #define RECEIVED_MSG_COLOR_PAIR 1
@@ -21,6 +22,9 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock);
 void handle_server_message(WINDOW *messages_win, int sock);
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
 void send_credentials(int sock, char *identifiant, char *mdp);
+void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
+void hash_password(const char* password, char hashedOutput[65]);
+
 
 
 int main(int argc, char *argv[]) {
@@ -84,10 +88,31 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+
+
+void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]) {
+    int i;
+    for(i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(outputBuffer + (i * 2), "%02x", hash[i]);
+    }
+    outputBuffer[64] = 0;
+}
+
+void hash_password(const char* password, char hashedOutput[65]) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, password, strlen(password));
+    SHA256_Final(hash, &sha256);
+    sha256_to_string(hash, hashedOutput);
+}
+
 void send_credentials(int sock, char *identifiant, char *mdp) {
-    // Concaténer identifiant et mdp séparés par un espace ou un autre séparateur
+    char hashedPassword[65];
+    hash_password(mdp, hashedPassword); // Hachez le mot de passe avant de l'envoyer
+
     char credentials[1024]; // Assurez-vous que cela est suffisamment grand
-    sprintf(credentials, "%s %s", identifiant, mdp);
+    sprintf(credentials, "%s %s", identifiant, hashedPassword); // Utilisez le mot de passe haché
     if (send(sock, credentials, strlen(credentials), 0) < 0) {
         perror("send credentials");
         close(sock);
@@ -95,6 +120,7 @@ void send_credentials(int sock, char *identifiant, char *mdp) {
         exit(1);
     }
 }
+
 
 void initialize_ncurses() {
     initscr();
