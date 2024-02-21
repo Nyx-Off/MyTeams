@@ -27,13 +27,13 @@ void hash_password(const char* password, char hashedOutput[65]);
 void update_client();
 
 
-// test maj
 void update_client(WINDOW *messages_win) {
     wprintw(messages_win, "Vérification de la disponibilité d'une mise à jour...\n");
     wrefresh(messages_win);
 
-    // La commande git fetch --dry-run retourne 0 s'il n'y a rien à chercher, donc une logique inversée est utilisée ici
-    if (system("git fetch --dry-run") != 0) {
+    system("git remote update");
+
+    if (system("git status -uno | grep 'Your branch is behind'") == 0) {
         wprintw(messages_win, "Mise à jour disponible. Téléchargement et compilation de la nouvelle version...\n");
         wrefresh(messages_win);
         
@@ -50,6 +50,7 @@ void update_client(WINDOW *messages_win) {
         wrefresh(messages_win);
     }
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
