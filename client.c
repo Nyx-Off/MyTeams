@@ -24,11 +24,33 @@ void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
 void send_credentials(int sock, char *identifiant, char *mdp);
 void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
 void hash_password(const char* password, char hashedOutput[65]);
+void update_client();
 
+void update_client(WINDOW *messages_win) {
+    wprintw(messages_win, "Vérification de la disponibilité d'une mise à jour...\n");
+    wrefresh(messages_win);
 
+    // La commande git fetch --dry-run retourne 0 s'il n'y a rien à chercher, donc une logique inversée est utilisée ici
+    if (system("git fetch --dry-run") != 0) {
+        wprintw(messages_win, "Mise à jour disponible. Téléchargement et compilation de la nouvelle version...\n");
+        wrefresh(messages_win);
+        
+        system("git pull");
+        system("make client");
+        
+        wprintw(messages_win, "Client mis à jour avec succès. Vous pouvez relancer le client.\n");
+        wrefresh(messages_win);
+        getch(); // Attente que l'utilisateur appuie sur une touche
+        endwin(); // Fermeture de ncurses
+        exit(0);
+    } else {
+        wprintw(messages_win, "Votre client est déjà à jour.\n");
+        wrefresh(messages_win);
+    }
+}
 
 int main(int argc, char *argv[]) {
-    if (argc != 5) { // Modifier ici pour accepter l'identifiant et le mdp comme arguments supplémentaires
+    if (argc != 5) {
         fprintf(stderr, "Usage: %s <Server Address> <Port> <Identifiant> <MotDePasse>\n", argv[0]);
         return 1;
     }
@@ -45,7 +67,6 @@ int main(int argc, char *argv[]) {
 
     init_connection(&sock, &serverAddr, serverAddress, port);
 
-    // Envoyer l'identifiant et le mdp au serveur avant le pseudo
     send_credentials(sock, identifiant, mdp);
 
     int max_y, max_x;
@@ -88,8 +109,6 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-
-
 void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]) {
     int i;
     for(i = 0; i < SHA256_DIGEST_LENGTH; i++) {
@@ -109,10 +128,10 @@ void hash_password(const char* password, char hashedOutput[65]) {
 
 void send_credentials(int sock, char *identifiant, char *mdp) {
     char hashedPassword[65];
-    hash_password(mdp, hashedPassword); // Hachez le mot de passe avant de l'envoyer
+    hash_password(mdp, hashedPassword); 
 
-    char credentials[1024]; // Assurez-vous que cela est suffisamment grand
-    sprintf(credentials, "%s %s", identifiant, hashedPassword); // Utilisez le mot de passe haché
+    char credentials[1024]; 
+    sprintf(credentials, "%s %s", identifiant, hashedPassword); 
     if (send(sock, credentials, strlen(credentials), 0) < 0) {
         perror("send credentials");
         close(sock);
@@ -193,8 +212,9 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/exit") == 0) {
         close_application(sock, input_win, messages_win);
         exit(0);
-    } 
-    else if (strlen(input_buffer) > 0) { 
+    }else if (strcmp(input_buffer, "/update") == 0) {
+        update_client(messages_win); 
+    }else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);
         wattroff(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
@@ -218,7 +238,7 @@ void handle_server_message(WINDOW *messages_win, int sock) {
     } else {
         if (strncmp(buffer, "ADMIN: ", 7) == 0) {
             wattron(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
-            wprintw(messages_win, "%s\n", buffer + 7); // +7 pour ignorer le préfixe "ADMIN: "
+            wprintw(messages_win, "%s\n", buffer + 7); 
             wattroff(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
         } else {
             wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));

@@ -40,3 +40,11 @@ clean:
 deps:
 	@echo "Vérification des dépendances pour ncurses..."
 	@dpkg -s libncurses5-dev libncursesw5-dev >/dev/null 2>&1 || (echo "Installation des dépendances manquantes pour ncurses..."; sudo apt-get install libncurses5-dev libncursesw5-dev)
+	@echo "Vérification des dépendances pour sqlite3..."
+	@dpkg -s sqlite3 libsqlite3-dev >/dev/null 2>&1 || (echo "Installation des dépendances manquantes pour sqlite3..."; sudo apt-get install sqlite3 libsqlite3-dev)
+	@echo "Vérification des dépendances pour openssl..."
+	@dpkg -s openssl libssl-dev >/dev/null 2>&1 || (echo "Installation des dépendances manquantes pour openssl..."; sudo apt-get install openssl libssl-dev)
+	@echo "Vérification des dépendances pour make..."
+	@dpkg -s make >/dev/null 2>&1 || (echo "Installation des dépendances manquantes pour make..."; sudo apt-get install make)
+	@echo "Vérification des dépendances pour gcc..."
+	@dpkg -s gcc >/dev/null 2>&1 || (echo "Installation des dépendances manquantes pour gcc..."; sudo apt-get install gcc)
