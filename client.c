@@ -26,6 +26,8 @@ void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffe
 void hash_password(const char* password, char hashedOutput[65]);
 void update_client();
 
+
+// test maj
 void update_client(WINDOW *messages_win) {
     wprintw(messages_win, "Vérification de la disponibilité d'une mise à jour...\n");
     wrefresh(messages_win);
