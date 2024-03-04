@@ -24,38 +24,6 @@ void close_application(int sock, WINDOW *input_win, WINDOW *messages_win);
 void send_credentials(int sock, char *identifiant, char *mdp);
 void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
 void hash_password(const char* password, char hashedOutput[65]);
-void update_client();
-
-// test maj
-
-// test maj
-// test maj
-// test maj
-// test maj
-void update_client(WINDOW *messages_win) {
-    wprintw(messages_win, "Vérification de la disponibilité d'une mise à jour...\n");
-    wrefresh(messages_win);
-
-    system("git remote update");
-
-    if (system("git status -uno | grep 'Your branch is behind'") == 0) {
-        wprintw(messages_win, "Mise à jour disponible. Téléchargement et compilation de la nouvelle version...\n");
-        wrefresh(messages_win);
-        
-        system("git pull");
-        system("make client");
-        
-        wprintw(messages_win, "Client mis à jour avec succès. Vous pouvez relancer le client.\n");
-        wrefresh(messages_win);
-        getch(); // Attente que l'utilisateur appuie sur une touche
-        endwin(); // Fermeture de ncurses
-        exit(0);
-    } else {
-        wprintw(messages_win, "Votre client est déjà à jour.\n");
-        wrefresh(messages_win);
-    }
-}
-
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
@@ -148,7 +116,6 @@ void send_credentials(int sock, char *identifiant, char *mdp) {
     }
 }
 
-
 void initialize_ncurses() {
     initscr();
     cbreak();
@@ -220,8 +187,6 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/exit") == 0) {
         close_application(sock, input_win, messages_win);
         exit(0);
-    }else if (strcmp(input_buffer, "/update") == 0) {
-        update_client(messages_win); 
     }else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);

@@ -44,6 +44,7 @@ int create_user(const char *permission, const char *identifiant, const char *pse
 int is_user_admin(const char *pseudo);
 void hash_password(const char* password, char hashedOutput[65]);
 void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
+void send_user_details(int client_sock, const char *pseudo);
 
 
 int main(int argc, char *argv[]) {
@@ -128,6 +129,42 @@ void hash_password(const char* password, char hashedOutput[65]) {
     sha256_to_string(hash, hashedOutput);
 }
 
+void send_user_details(int client_sock, const char *pseudo) {
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT identifiant, permission, derniere_connections FROM utilisateurs WHERE pseudo = ?";
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
+
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char *identifiant = (const char *)sqlite3_column_text(stmt, 0);
+                const char *permission = (const char *)sqlite3_column_text(stmt, 1);
+                const char *derniere_connexion = (const char *)sqlite3_column_text(stmt, 2);
+
+                char response[BUFFER_SIZE];
+                snprintf(response, BUFFER_SIZE, "Pseudo: %s\nIdentifiant: %s\nPermission: %s\nDernière connexion: %s\n",
+                         pseudo, identifiant, permission, derniere_connexion);
+
+                send(client_sock, response, strlen(response), 0);
+            } else {
+                char response[BUFFER_SIZE] = "Erreur lors de la récupération des détails de l'utilisateur.\n";
+                send(client_sock, response, strlen(response), 0);
+            }
+
+            sqlite3_finalize(stmt);
+        } else {
+            char response[BUFFER_SIZE] = "Erreur lors de la préparation de la requête.\n";
+            send(client_sock, response, strlen(response), 0);
+        }
+
+        sqlite3_close(db);
+    } else {
+        char response[BUFFER_SIZE] = "Erreur de connexion à la base de données.\n";
+        send(client_sock, response, strlen(response), 0);
+    }
+}
 
 
 int verify_credentials(char *identifiant, char *mdp, char *pseudo) {
@@ -322,17 +359,41 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             
         }
 
-        if (strncmp(buffer, "/who", 3) == 0) {
-        // Construire la réponse avec la liste des utilisateurs connectés
+
+
+        if (strncmp(buffer, "/who", 4) == 0) {
+            int isAdmin = is_user_admin(client_pseudos[find_client_index_by_sock(client_sock)]);
             char response[BUFFER_SIZE] = "Utilisateurs connectés : \n";
-            for (int i = 0; i < total_clients; i++) {
-                strcat(response, client_pseudos[i]);
-                strcat(response, "\n");
+
+            if (isAdmin) {
+                // Log pour débogage
+                wprintw(stdscr, "Mode Admin activé pour /who\n");
+                
+                for (int i = 0; i < total_clients; i++) {
+                    strcat(response, client_pseudos[i]);
+                    strcat(response, " (Détails):\n");
+
+                    // Appeler la fonction pour envoyer les détails de l'utilisateur
+                    send_user_details(client_sock, client_pseudos[i]);
+
+                    // Attendre un court instant pour éviter de mélanger les réponses
+                    usleep(10000);
+                }
+            } else {
+                // Log pour débogage
+                wprintw(stdscr, "Mode Utilisateur normal pour /who\n");
+
+                for (int i = 0; i < total_clients; i++) {
+                    strcat(response, client_pseudos[i]);
+                    strcat(response, "\n");
+                }
             }
-            // Envoyer la réponse uniquement au client qui a demandé
+
+            // Envoyer la réponse
             send(client_sock, response, strlen(response), 0);
             return;
         }
+
 
 
 
