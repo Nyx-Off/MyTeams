@@ -187,6 +187,7 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
     if (strcmp(input_buffer, "/exit") == 0) {
         close_application(sock, input_win, messages_win);
         exit(0);
+
     }else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);

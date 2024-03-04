@@ -45,6 +45,8 @@ int is_user_admin(const char *pseudo);
 void hash_password(const char* password, char hashedOutput[65]);
 void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffer[65]);
 void send_user_details(int client_sock, const char *pseudo);
+void update_last_connection(const char *pseudo);
+void update_disconnected(const char *pseudo) ;
 
 
 int main(int argc, char *argv[]) {
@@ -264,6 +266,7 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
         close_socket(client_sock, master_fds);
         return;
     }
+    update_last_connection(pseudo);
 
     // Ajout du nouveau client
     FD_SET(client_sock, master_fds);
@@ -278,6 +281,7 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     wprintw(stdscr, "Client connecté : %s (socket %d)\n", pseudo, client_sock);
     wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wrefresh(stdscr);
+
 }
 
 
@@ -646,6 +650,12 @@ void close_socket(int sock, fd_set *master_fds) {
     close(sock); // Fermer la socket
     FD_CLR(sock, master_fds); // Retirer la socket de l'ensemble des descripteurs
 
+    // Mettre à jour la colonne actif
+    int client_index = find_client_index(sock);
+    if (client_index != -1) {
+        update_disconnected(client_pseudos[client_index]);
+    }
+
     // Trouver l'index du client dans client_socks et le retirer
     for (int i = 0; i < total_clients; i++) {
         if (client_socks[i] == sock) {
@@ -661,6 +671,70 @@ void close_socket(int sock, fd_set *master_fds) {
         }
     }
 }
+
+
+
+void update_last_connection(const char *pseudo) {
+    sqlite3 *db;
+    char *sql = "UPDATE utilisateurs SET derniere_connections = CURRENT_TIMESTAMP, actif = 1 WHERE pseudo = ?";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                // Erreur lors de la mise à jour de derniere_connections et actif.
+                printw("Erreur lors de la mise à jour de derniere_connections et actif.\n");
+            } else {
+                // Mise à jour réussie.
+                printw("Mise à jour réussie de derniere_connections et actif.\n");
+            }
+
+            sqlite3_finalize(stmt);
+        } else {
+            // Erreur lors de la préparation de la mise à jour de derniere_connections et actif.
+            printw("Erreur lors de la préparation de la mise à jour de derniere_connections et actif.\n");
+        }
+        sqlite3_close(db);
+    }
+}
+
+void update_disconnected(const char *pseudo) {
+    sqlite3 *db;
+    char *sql = "UPDATE utilisateurs SET actif = 0 WHERE pseudo = ?";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                // Erreur lors de la mise à jour de actif.
+                printw("Erreur lors de la mise à jour de actif.\n");
+            } else {
+                // Mise à jour réussie.
+                printw("Mise à jour réussie de actif.\n");
+            }
+
+            sqlite3_finalize(stmt);
+        } else {
+            // Erreur lors de la préparation de la mise à jour de actif.
+            printw("Erreur lors de la préparation de la mise à jour de actif.\n");
+        }
+        sqlite3_close(db);
+    }
+}
+
+int find_client_index(int sock) {
+    for (int i = 0; i < total_clients; i++) {
+        if (client_socks[i] == sock) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 
 void log_message(const char *message) {
     FILE *file = fopen("messages.log", "a");
