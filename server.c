@@ -19,6 +19,7 @@
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
 #define ADMIN_MSG_COLOR_PAIR 3
+#define STATUS_MSG_COLOR_PAIR 4
 
 int client_socks[MAX_CLIENTS] = {0};
 char client_pseudos[MAX_CLIENTS][PSEUDO_SIZE] = {0};
@@ -33,7 +34,7 @@ int client_dnd_mode[MAX_CLIENTS] = {0}; // 0: désactivé, 1: activé
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port);
 void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max);
 void handle_client_message(int client_sock, fd_set *master_fds);
-void broadcast_message(int sender_sock, char *message, char *sender_pseudo);
+void broadcast_message(int sender_sock, char *message, char *sender_pseudo, bool is_status);
 void close_socket(int sock, fd_set *master_fds);
 void log_message(const char *message);
 int verify_credentials(char *identifiant, char *mdp, char *pseudo);
@@ -65,6 +66,7 @@ int main(int argc, char *argv[]) {
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
     init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
+    init_pair(STATUS_MSG_COLOR_PAIR, COLOR_MAGENTA, COLOR_BLACK);
     scrollok(stdscr, TRUE);
     wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wprintw(stdscr, "Serveur démarré sur le port %d\n", port);
@@ -278,6 +280,21 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             printf("Erreur: Client introuvable.\n");
             return;
         }
+
+        if (buffer[0] == '/') {
+            // Affichage de la commande reçue côté serveur
+            wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+            if (is_user_admin(client_pseudos[client_index])) {
+                wprintw(stdscr, "[ADMIN] Commande reçue de %s: %s\n", client_pseudos[client_index], buffer);
+            } else {
+                wprintw(stdscr, "Commande reçue de %s: %s\n", client_pseudos[client_index], buffer);
+            }
+            wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
+            wrefresh(stdscr);
+        }
+
+
+
         if (strncmp(buffer, "/info", 5) == 0) {
             char response[BUFFER_SIZE];
             int uptime_seconds = difftime(time(NULL), server_start_time);
@@ -304,6 +321,19 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             }
             return; // Ne pas traiter d'autres commandes ou messages
         }
+
+
+       if (strncmp(buffer, "/status ", 7) == 0) {
+            char status_message[BUFFER_SIZE];
+            snprintf(status_message, sizeof(status_message), "%s", buffer + 7);
+            broadcast_message(client_sock, status_message, client_pseudos[client_index], true);
+            return;
+        }
+
+
+
+
+
 
         if (strncmp(buffer, "/help" , 5) == 0 ) {
             if (is_user_admin(client_pseudos[client_index])) {
@@ -416,8 +446,8 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wprintw(stdscr, "%s\n", full_message);
             wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
         }
-        log_message(full_message); 
-        broadcast_message(client_sock, buffer, client_pseudos[client_index]); 
+        log_message(full_message);
+        broadcast_message(client_sock, buffer, client_pseudos[client_index], false); // Ajouter le quatrième argument "false"
         wrefresh(stdscr); 
     }
 }
@@ -531,20 +561,29 @@ void update_pseudo_in_db(int userId, char *newPseudo) {
     }
 }
 
-void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
-    int isAdmin = is_user_admin(sender_pseudo); 
-    char full_message[BUFFER_SIZE + PSEUDO_SIZE + 10]; 
-    if (isAdmin) {
-        snprintf(full_message, sizeof(full_message), "ADMIN: %s: %s", sender_pseudo, message);
+void broadcast_message(int sender_sock, char *message, char *sender_pseudo, bool is_status) {
+    int isAdmin = is_user_admin(sender_pseudo);
+    char full_message[FULL_MESSAGE_SIZE];
+
+    // Utilisez is_status pour préfixer le message avec "STATUS:" si nécessaire
+    if (is_status) {
+        snprintf(full_message, sizeof(full_message), "STATUS de %s: %s", sender_pseudo, message);
+    } else if (isAdmin) {
+        snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message);
     } else {
         snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message);
     }
+
     for (int i = 0; i < total_clients; i++) {
-        if (client_socks[i] != sender_sock && !client_dnd_mode[i]) { // Vérifier le mode Ne Pas Déranger
+        if (client_socks[i] != sender_sock && !client_dnd_mode[i]) {
             send(client_socks[i], full_message, strlen(full_message), 0);
         }
     }
+
+    // Log du message
+    log_message(full_message);
 }
+
 
 void close_socket(int sock, fd_set *master_fds) {
     close(sock);

@@ -14,6 +14,7 @@
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
 #define ADMIN_MSG_COLOR_PAIR 3
+#define STATUS_MSG_COLOR_PAIR 4
 
 void initialize_ncurses();
 void setup_color_pairs();
@@ -128,6 +129,7 @@ void setup_color_pairs() {
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
     init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
+    init_pair(STATUS_MSG_COLOR_PAIR, COLOR_MAGENTA, COLOR_BLACK);
 
 }
 
@@ -188,6 +190,8 @@ void handle_user_input(WINDOW *input_win, WINDOW *messages_win, int sock) {
         close_application(sock, input_win, messages_win);
         exit(0);
 
+    }else if (strncmp(input_buffer, "/status ", 7) == 0) {
+        send(sock, input_buffer, strlen(input_buffer), 0);
     }else if (strlen(input_buffer) > 0) { 
         wattron(messages_win, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(messages_win, "> %s\n", input_buffer);
@@ -205,23 +209,28 @@ void handle_server_message(WINDOW *messages_win, int sock) {
     ssize_t len = recv(sock, buffer, BUFFER_SIZE - 1, 0);
 
     if (len <= 0) {
-        wprintw(messages_win, "Server disconnected.\n");
-        wrefresh(messages_win);
+        wprintw(messages_win, "Server disconnected. Press any key to exit.\n");
         close_application(sock, NULL, messages_win);
         exit(0);
     } else {
-        if (strncmp(buffer, "ADMIN: ", 7) == 0) {
+        if (strncmp(buffer, "[ADMIN]: ", 9) == 0) {
             wattron(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
-            wprintw(messages_win, "%s\n", buffer + 7); 
+            wprintw(messages_win, "%s\n", buffer); 
             wattroff(messages_win, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR));
+        } else if (strncmp(buffer, "STATUS de ", 10) == 0) {
+            wattron(messages_win, COLOR_PAIR(STATUS_MSG_COLOR_PAIR));
+            wprintw(messages_win, "%s\n", buffer);
+            wattroff(messages_win, COLOR_PAIR(STATUS_MSG_COLOR_PAIR));
         } else {
             wattron(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
             wprintw(messages_win, "%s\n", buffer);
             wattroff(messages_win, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
         }
-        wrefresh(messages_win);
     }
+    wrefresh(messages_win);
 }
+
+
 
 
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win) {
