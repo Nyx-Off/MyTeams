@@ -230,9 +230,6 @@ void handle_server_message(WINDOW *messages_win, int sock) {
     wrefresh(messages_win);
 }
 
-
-
-
 void close_application(int sock, WINDOW *input_win, WINDOW *messages_win) {
     if (input_win != NULL) {
         delwin(input_win);

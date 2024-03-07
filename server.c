@@ -49,6 +49,7 @@ void sha256_to_string(unsigned char hash[SHA256_DIGEST_LENGTH], char outputBuffe
 void send_user_details(int client_sock, const char *pseudo);
 void update_last_connection(const char *pseudo);
 void update_disconnected(const char *pseudo) ;
+void kick_client(char *targetPseudo, int sender_sock, fd_set *master_fds);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -293,8 +294,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wrefresh(stdscr);
         }
 
-
-
         if (strncmp(buffer, "/info", 5) == 0) {
             char response[BUFFER_SIZE];
             int uptime_seconds = difftime(time(NULL), server_start_time);
@@ -321,20 +320,12 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             }
             return; // Ne pas traiter d'autres commandes ou messages
         }
-
-
        if (strncmp(buffer, "/status ", 7) == 0) {
             char status_message[BUFFER_SIZE];
             snprintf(status_message, sizeof(status_message), "%s", buffer + 7);
             broadcast_message(client_sock, status_message, client_pseudos[client_index], true);
             return;
         }
-
-
-
-
-
-
         if (strncmp(buffer, "/help" , 5) == 0 ) {
             if (is_user_admin(client_pseudos[client_index])) {
                 char response[BUFFER_SIZE] = "Commandes disponibles :\n";
@@ -397,7 +388,22 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                 send(client_sock, "Erreur: Le pseudo est déjà pris ou les pseudos ne correspondent pas.", 68, 0);
                 return;
             }
-        }      
+        }     
+        
+        if (strncmp(buffer, "/kick ", 6) == 0) {
+            char targetPseudo[PSEUDO_SIZE] = {0};
+            sscanf(buffer + 6, "%s", targetPseudo);
+
+            // Vérifier si l'utilisateur est un admin
+            if (is_user_admin(client_pseudos[find_client_index_by_sock(client_sock)])) {
+                kick_client(targetPseudo, client_sock, master_fds);
+            } else {
+                char errorMsg[BUFFER_SIZE] = "Vous n'avez pas la permission d'utiliser cette commande.\n";
+                send(client_sock, errorMsg, strlen(errorMsg), 0);
+            }
+            return;
+        }
+
         if (strncmp(buffer, "/createuser", 11) == 0) {
             if (is_user_admin(client_pseudos[client_index])) {
                 char permission[BUFFER_SIZE], identifiant[BUFFER_SIZE], confIdentifiant[BUFFER_SIZE],
@@ -446,7 +452,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wprintw(stdscr, "%s\n", full_message);
             wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
         }
-        log_message(full_message);
         broadcast_message(client_sock, buffer, client_pseudos[client_index], false); // Ajouter le quatrième argument "false"
         wrefresh(stdscr); 
     }
@@ -653,6 +658,31 @@ int find_client_index(int sock) {
         }
     }
     return -1;
+}
+
+void kick_client(char *targetPseudo, int sender_sock, fd_set *master_fds) {
+    for (int i = 0; i < total_clients; i++) {
+        if (strcmp(client_pseudos[i], targetPseudo) == 0) {
+            int targetSock = client_socks[i];
+
+            char kickMsg[BUFFER_SIZE] = "Vous avez été expulsé du serveur.\n";
+            send(targetSock, kickMsg, strlen(kickMsg), 0);
+
+            close_socket(targetSock, master_fds);
+            char logMsg[BUFFER_SIZE];
+            snprintf(logMsg, sizeof(logMsg), "L'utilisateur %s a été expulsé par %s\n", targetPseudo, client_pseudos[find_client_index(sender_sock)]);
+            log_message(logMsg);
+
+            // Broadcast à tous les clients qu'un utilisateur a été kické
+            char broadcastMsg[BUFFER_SIZE];
+            snprintf(broadcastMsg, sizeof(broadcastMsg), "%s a été expulsé du serveur.", targetPseudo);
+            broadcast_message(sender_sock, broadcastMsg, "Serveur", true);
+            return;
+        }
+    }
+
+    char errorMsg[BUFFER_SIZE] = "Pseudo non trouvé.\n";
+    send(sender_sock, errorMsg, strlen(errorMsg), 0);
 }
 
 void log_message(const char *message) {
