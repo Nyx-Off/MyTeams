@@ -14,7 +14,7 @@
 #define MAX_CLIENTS 30
 #define BUFFER_SIZE 1024
 #define PSEUDO_SIZE 32
-#define FULL_MESSAGE_SIZE (PSEUDO_SIZE + BUFFER_SIZE + 2) // +2 pour ": " et '\0'
+#define FULL_MESSAGE_SIZE (PSEUDO_SIZE + BUFFER_SIZE + 2)
 
 #define RECEIVED_MSG_COLOR_PAIR 1
 #define SENT_MSG_COLOR_PAIR 2
@@ -27,6 +27,7 @@ int total_clients = 0;
 char *motd = "Bienvenue sur le serveur!";
 time_t server_start_time;
 int max_clients = MAX_CLIENTS;
+int client_dnd_mode[MAX_CLIENTS] = {0}; // 0: désactivé, 1: activé
 
 
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port);
@@ -48,19 +49,15 @@ void send_user_details(int client_sock, const char *pseudo);
 void update_last_connection(const char *pseudo);
 void update_disconnected(const char *pseudo) ;
 
-
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <Port>\n", argv[0]);
         return 1;
     }
-
     server_start_time = time(NULL);
-
     int port = atoi(argv[1]);
     int server_sock;
     struct sockaddr_in server_addr;
-
     initscr();
     cbreak();
     noecho();
@@ -68,22 +65,17 @@ int main(int argc, char *argv[]) {
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
     init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
-
     scrollok(stdscr, TRUE);
-
     wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wprintw(stdscr, "Serveur démarré sur le port %d\n", port);
     wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wrefresh(stdscr);
-
     fd_set read_fds, master_fds;
     int fd_max;
-
     init_server(&server_sock, &server_addr, port);
     FD_ZERO(&master_fds);
     FD_SET(server_sock, &master_fds);
     fd_max = server_sock;
-
     while (1) {
         FD_ZERO(&read_fds);
         FD_SET(server_sock, &read_fds);
@@ -91,12 +83,10 @@ int main(int argc, char *argv[]) {
             FD_SET(client_socks[i], &read_fds);
         }
         fd_max = (fd_max > server_sock) ? fd_max : server_sock;
-
         if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
             break;
         }
-
         for (int i = 0; i <= fd_max; i++) {
             if (FD_ISSET(i, &read_fds)) {
                 if (i == server_sock) {
@@ -107,7 +97,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-
     close(server_sock);
     endwin();
     return 0;
@@ -134,32 +123,26 @@ void send_user_details(int client_sock, const char *pseudo) {
     sqlite3 *db;
     sqlite3_stmt *stmt;
     const char *sql = "SELECT identifiant, permission, derniere_connections FROM utilisateurs WHERE pseudo = ?";
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
-
             if (sqlite3_step(stmt) == SQLITE_ROW) {
                 const char *identifiant = (const char *)sqlite3_column_text(stmt, 0);
                 const char *permission = (const char *)sqlite3_column_text(stmt, 1);
                 const char *derniere_connexion = (const char *)sqlite3_column_text(stmt, 2);
-
                 char response[BUFFER_SIZE];
                 snprintf(response, BUFFER_SIZE, "Pseudo: %s\nIdentifiant: %s\nPermission: %s\nDernière connexion: %s\n",
                          pseudo, identifiant, permission, derniere_connexion);
-
                 send(client_sock, response, strlen(response), 0);
             } else {
                 char response[BUFFER_SIZE] = "Erreur lors de la récupération des détails de l'utilisateur.\n";
                 send(client_sock, response, strlen(response), 0);
             }
-
             sqlite3_finalize(stmt);
         } else {
             char response[BUFFER_SIZE] = "Erreur lors de la préparation de la requête.\n";
             send(client_sock, response, strlen(response), 0);
         }
-
         sqlite3_close(db);
     } else {
         char response[BUFFER_SIZE] = "Erreur de connexion à la base de données.\n";
@@ -167,19 +150,16 @@ void send_user_details(int client_sock, const char *pseudo) {
     }
 }
 
-
 int verify_credentials(char *identifiant, char *mdp, char *pseudo) {
     sqlite3 *db;
     char *sql;
     int result = 0;
     sqlite3_stmt *stmt;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         sql = "SELECT pseudo FROM utilisateurs WHERE identifiant = ? AND mdp = ?";
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, identifiant, -1, SQLITE_STATIC);
             sqlite3_bind_text(stmt, 2, mdp, -1, SQLITE_STATIC);
-
             if (sqlite3_step(stmt) == SQLITE_ROW) {
                 const char *retrieved_pseudo = (const char *)sqlite3_column_text(stmt, 0);
                 if (retrieved_pseudo) {
@@ -195,7 +175,6 @@ int verify_credentials(char *identifiant, char *mdp, char *pseudo) {
     return result;
 }
 
-
 void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
     *server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (*server_sock < 0) {
@@ -203,7 +182,6 @@ void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
         endwin();
         exit(1);
     }
-
     int optval = 1;
     if (setsockopt(*server_sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
         perror("setsockopt");
@@ -211,19 +189,16 @@ void init_server(int *server_sock, struct sockaddr_in *server_addr, int port) {
         endwin();
         exit(1);
     }
-
     memset(server_addr, 0, sizeof(*server_addr));
     server_addr->sin_family = AF_INET;
     server_addr->sin_addr.s_addr = INADDR_ANY;
     server_addr->sin_port = htons(port);
-
     if (bind(*server_sock, (struct sockaddr *)server_addr, sizeof(*server_addr)) < 0) {
         perror("bind");
         close(*server_sock);
         endwin(); 
         exit(1);
     }
-
     if (listen(*server_sock, MAX_CLIENTS) < 0) {
         perror("listen");
         close(*server_sock);
@@ -237,25 +212,20 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     struct sockaddr_in client_addr;
     socklen_t client_addr_size = sizeof(client_addr);
     char buffer[1024]; 
-
     client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_size);
     if (client_sock < 0) {
         perror("accept");
         endwin();
         return;
     }
-
     ssize_t len = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
     if (len <= 0) {
         close_socket(client_sock, master_fds);
         return;
     }
     buffer[len] = '\0';
-
     char identifiant[BUFFER_SIZE] = {0}, mdp[BUFFER_SIZE] = {0}, pseudo[PSEUDO_SIZE] = {0};
-
     sscanf(buffer, "%s %s", identifiant, mdp);
-
     if (!verify_credentials(identifiant, mdp, pseudo)) {
         wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
         wprintw(stdscr, "Échec de la vérification des identifiants pour la socket %d\n", client_sock);
@@ -264,7 +234,6 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
         return;
     }
     update_last_connection(pseudo);
-
     FD_SET(client_sock, master_fds);
     if (client_sock > *fd_max) {
         *fd_max = client_sock;
@@ -272,14 +241,11 @@ void handle_new_connection(int server_sock, fd_set *master_fds, int *fd_max) {
     client_socks[total_clients] = client_sock;
     strncpy(client_pseudos[total_clients], pseudo, PSEUDO_SIZE);
     total_clients++;
-
     wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wprintw(stdscr, "Client connecté : %s (socket %d)\n", pseudo, client_sock);
     wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
     wrefresh(stdscr);
-
 }
-
 
 int find_client_index_by_sock(int sock) {
     for (int i = 0; i < total_clients; i++) {
@@ -291,15 +257,11 @@ int find_client_index_by_sock(int sock) {
 }
 
 void handle_client_message(int client_sock, fd_set *master_fds) {
-   
     int port = 4242;
     char buffer[BUFFER_SIZE] = {0};
-
     char newPseudo[PSEUDO_SIZE] = {0};
     char confirmationPseudo[PSEUDO_SIZE] = {0};
-
     ssize_t len = recv(client_sock, buffer, BUFFER_SIZE - 1, 0);
-
     if (len <= 0) {
         if (len == 0) {
             wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
@@ -311,7 +273,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         close_socket(client_sock, master_fds); 
     } else {
         buffer[len] = '\0'; 
-
         int client_index = find_client_index_by_sock(client_sock);
         if (client_index == -1) {
             printf("Erreur: Client introuvable.\n");
@@ -323,13 +284,27 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             int hours = uptime_seconds / 3600;
             int minutes = (uptime_seconds % 3600) / 60;
             int seconds = uptime_seconds % 60;
-
             snprintf(response, BUFFER_SIZE, "IP: %s\nPort: %d\nMOTD: %s\nUptime: %02d:%02d:%02d\nClients: %d/%d\n", 
                     "127.0.0.1", port, motd, hours, minutes, seconds, total_clients, max_clients);
-
             send(client_sock, response, strlen(response), 0); 
             return;
         }
+
+        if (strncmp(buffer, "/pause", 6) == 0) {
+            int client_index = find_client_index_by_sock(client_sock);
+            if (client_index != -1) {
+                client_dnd_mode[client_index] = !client_dnd_mode[client_index]; // Bascule l'état du mode
+                if (client_dnd_mode[client_index]) {
+                    send(client_sock, "Mode Ne Pas Déranger activé.\n", 30, 0);
+                } else {
+                    send(client_sock, "Mode Ne Pas Déranger désactivé.\n", 31, 0);
+                }
+            } else {
+                send(client_sock, "Erreur: Client introuvable.\n", 28, 0);
+            }
+            return; // Ne pas traiter d'autres commandes ou messages
+        }
+
         if (strncmp(buffer, "/help" , 5) == 0 ) {
             if (is_user_admin(client_pseudos[client_index])) {
                 char response[BUFFER_SIZE] = "Commandes disponibles :\n";
@@ -352,11 +327,7 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                 send(client_sock, response, strlen(response), 0);
                 return;
             }
-            
         }
-
-
-
         if (strncmp(buffer, "/who", 4) == 0) {
             int isAdmin = is_user_admin(client_pseudos[find_client_index_by_sock(client_sock)]);
             char response[BUFFER_SIZE] = "Utilisateurs connectés : \n";
@@ -380,11 +351,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             send(client_sock, response, strlen(response), 0);
             return;
         }
-
-
-
-
-
         if (sscanf(buffer, "/nickname %s %s", newPseudo, confirmationPseudo) == 2) {
             if (strcmp(newPseudo, confirmationPseudo) == 0 && check_pseudo_availability(newPseudo)) {
                 int userId = get_user_id_by_pseudo(client_pseudos[find_client_index_by_sock(client_sock)]);
@@ -402,12 +368,10 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                 return;
             }
         }      
-
         if (strncmp(buffer, "/createuser", 11) == 0) {
             if (is_user_admin(client_pseudos[client_index])) {
                 char permission[BUFFER_SIZE], identifiant[BUFFER_SIZE], confIdentifiant[BUFFER_SIZE],
                     pseudo[BUFFER_SIZE], confPseudo[BUFFER_SIZE], mdp[BUFFER_SIZE], confMdp[BUFFER_SIZE];
-
                 if (sscanf(buffer, "/createuser %s %s %s %s %s %s %s", permission, identifiant, confIdentifiant,pseudo, confPseudo, mdp, confMdp) == 7) {
                     if (strcmp(identifiant, confIdentifiant) == 0 && strcmp(pseudo, confPseudo) == 0 && strcmp(mdp, confMdp) == 0) {
                         int creationStatus = create_user(permission, identifiant, pseudo, mdp);
@@ -440,11 +404,9 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
                 return;
             }
         }  
-
         int isAdmin = is_user_admin(client_pseudos[client_index]);
         char full_message[FULL_MESSAGE_SIZE];
         snprintf(full_message, sizeof(full_message), "%s: %s", client_pseudos[client_index], buffer);
-
         if (isAdmin) {
             wattron(stdscr, COLOR_PAIR(ADMIN_MSG_COLOR_PAIR)); 
             wprintw(stdscr, "%s\n", full_message);
@@ -454,7 +416,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wprintw(stdscr, "%s\n", full_message);
             wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
         }
-
         log_message(full_message); 
         broadcast_message(client_sock, buffer, client_pseudos[client_index]); 
         wrefresh(stdscr); 
@@ -466,7 +427,6 @@ int get_user_id_by_pseudo(const char *pseudo) {
     sqlite3_stmt *stmt;
     const char *sql = "SELECT id FROM utilisateurs WHERE pseudo = ?";
     int userId = -1;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
@@ -477,31 +437,25 @@ int get_user_id_by_pseudo(const char *pseudo) {
         }
         sqlite3_close(db);
     }
-
     return userId;
 }
-
 
 int is_user_admin(const char *pseudo) {
     sqlite3 *db;
     sqlite3_stmt *stmt;
     const char *sql = "SELECT permission FROM utilisateurs WHERE pseudo = ?";
     int isAdmin = 0;
-    
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
-            
             if (sqlite3_step(stmt) == SQLITE_ROW) {
                 const char *permission = (const char *)sqlite3_column_text(stmt, 0);
                 isAdmin = strcmp(permission, "admin") == 0; 
             }
-            
             sqlite3_finalize(stmt);
         }
         sqlite3_close(db);
     }
-    
     return isAdmin;
 }
 
@@ -513,13 +467,10 @@ int create_user(const char *permission, const char *identifiant, const char *pse
         sqlite3_close(db);
         return -1;
     }
-
     char *sql = "INSERT INTO utilisateurs (permission, identifiant, pseudo, mdp) VALUES (?, ?, ?, ?);";
     sqlite3_stmt *stmt;
-
     char hashedPassword[65];
     hash_password(mdp, hashedPassword);
-
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
     if (rc == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, permission, -1, SQLITE_STATIC);
@@ -529,7 +480,6 @@ int create_user(const char *permission, const char *identifiant, const char *pse
     } else {
         fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
     }
-
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         printf("ERROR inserting data: %s\n", sqlite3_errmsg(db));
@@ -537,20 +487,16 @@ int create_user(const char *permission, const char *identifiant, const char *pse
         sqlite3_close(db);
         return -2;
     }
-
     sqlite3_finalize(stmt);
     sqlite3_close(db);
-
     return 0;
 }
-
 
 int check_pseudo_availability(char *pseudo) {
     sqlite3 *db;
     char *sql = "SELECT COUNT(*) FROM utilisateurs WHERE pseudo = ?";
     sqlite3_stmt *stmt;
     int count = 1;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_STATIC);
@@ -564,24 +510,19 @@ int check_pseudo_availability(char *pseudo) {
     return count == 0; 
 }
 
-#include <ncurses.h>
-
 void update_pseudo_in_db(int userId, char *newPseudo) {
     sqlite3 *db;
     char *sql = "UPDATE utilisateurs SET pseudo = ? WHERE id = ?";
     sqlite3_stmt *stmt;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, newPseudo, -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt, 2, userId);
-
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 printw("Erreur lors de la mise à jour du pseudo.\n");
             } else {
                 printw("Pseudo mis à jour avec succès.\n");
             }
-
             sqlite3_finalize(stmt);
         } else {
             printw("Erreur lors de la préparation de la mise à jour du pseudo.\n");
@@ -590,35 +531,28 @@ void update_pseudo_in_db(int userId, char *newPseudo) {
     }
 }
 
-
-
 void broadcast_message(int sender_sock, char *message, char *sender_pseudo) {
     int isAdmin = is_user_admin(sender_pseudo); 
     char full_message[BUFFER_SIZE + PSEUDO_SIZE + 10]; 
-
     if (isAdmin) {
         snprintf(full_message, sizeof(full_message), "ADMIN: %s: %s", sender_pseudo, message);
     } else {
         snprintf(full_message, sizeof(full_message), "%s: %s", sender_pseudo, message);
     }
-
     for (int i = 0; i < total_clients; i++) {
-        if (client_socks[i] != sender_sock) {
+        if (client_socks[i] != sender_sock && !client_dnd_mode[i]) { // Vérifier le mode Ne Pas Déranger
             send(client_socks[i], full_message, strlen(full_message), 0);
         }
     }
 }
 
-
 void close_socket(int sock, fd_set *master_fds) {
     close(sock);
     FD_CLR(sock, master_fds); 
-
     int client_index = find_client_index(sock);
     if (client_index != -1) {
         update_disconnected(client_pseudos[client_index]);
     }
-
     for (int i = 0; i < total_clients; i++) {
         if (client_socks[i] == sock) {
             for (int j = i; j < total_clients - 1; j++) {
@@ -633,23 +567,18 @@ void close_socket(int sock, fd_set *master_fds) {
     }
 }
 
-
-
 void update_last_connection(const char *pseudo) {
     sqlite3 *db;
     char *sql = "UPDATE utilisateurs SET derniere_connections = CURRENT_TIMESTAMP, actif = 1 WHERE pseudo = ?";
     sqlite3_stmt *stmt;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_TRANSIENT);
-
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 printw("Erreur lors de la mise à jour de derniere_connections et actif.\n");
             } else {
                 printw("Mise à jour réussie de derniere_connections et actif.\n");
             }
-
             sqlite3_finalize(stmt);
         } else {
             printw("Erreur lors de la préparation de la mise à jour de derniere_connections et actif.\n");
@@ -662,17 +591,14 @@ void update_disconnected(const char *pseudo) {
     sqlite3 *db;
     char *sql = "UPDATE utilisateurs SET actif = 0 WHERE pseudo = ?";
     sqlite3_stmt *stmt;
-
     if (sqlite3_open("MyTeams.db", &db) == SQLITE_OK) {
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
             sqlite3_bind_text(stmt, 1, pseudo, -1, SQLITE_TRANSIENT);
-
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 printw("Erreur lors de la mise à jour de actif.\n");
             } else {
                 printw("Mise à jour réussie de actif.\n");
             }
-
             sqlite3_finalize(stmt);
         } else {
             printw("Erreur lors de la préparation de la mise à jour de actif.\n");
@@ -689,7 +615,6 @@ int find_client_index(int sock) {
     }
     return -1;
 }
-
 
 void log_message(const char *message) {
     FILE *file = fopen("messages.log", "a");
