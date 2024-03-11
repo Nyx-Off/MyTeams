@@ -52,56 +52,85 @@ void update_disconnected(const char *pseudo) ;
 void kick_client(char *targetPseudo, int sender_sock, fd_set *master_fds);
 
 int main(int argc, char *argv[]) {
+    // Vérification que le programme a été lancé avec le bon nombre d'arguments
     if (argc != 2) {
+        // Si le nombre d'arguments est incorrect, affiche l'utilisation correcte et quitte
         fprintf(stderr, "Usage: %s <Port>\n", argv[0]);
         return 1;
     }
+
+    // Enregistrement de l'heure de démarrage du serveur
     server_start_time = time(NULL);
+
+    // Conversion du port fourni en argument en un entier
     int port = atoi(argv[1]);
+
+    // Déclaration de la socket du serveur et de la structure d'adresse
     int server_sock;
     struct sockaddr_in server_addr;
-    initscr();
-    cbreak();
-    noecho();
-    start_color();
+
+    // Initialisation de ncurses pour l'interface utilisateur
+    initscr(); // Initialise l'écran
+    cbreak(); // Désactive la mise en tampon de ligne, permettant de recevoir les caractères dès qu'ils sont tapés
+    noecho(); // Désactive l'écho des caractères tapés, pour une meilleure gestion de l'affichage
+    start_color(); // Active l'utilisation des couleurs
+
+    // Initialisation des paires de couleurs
     init_pair(RECEIVED_MSG_COLOR_PAIR, COLOR_CYAN, COLOR_BLACK);
     init_pair(SENT_MSG_COLOR_PAIR, COLOR_GREEN, COLOR_BLACK);
-    init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK); 
+    init_pair(ADMIN_MSG_COLOR_PAIR, COLOR_RED, COLOR_BLACK);
     init_pair(STATUS_MSG_COLOR_PAIR, COLOR_MAGENTA, COLOR_BLACK);
+
+    // Configuration de l'écran pour le défilement automatique
     scrollok(stdscr, TRUE);
-    wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-    wprintw(stdscr, "Serveur démarré sur le port %d\n", port);
-    wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
-    wrefresh(stdscr);
+
+    // Affichage d'un message indiquant le démarrage du serveur
+    wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Active l'affichage en vert
+    wprintw(stdscr, "Serveur démarré sur le port %d\n", port); // Affiche le message
+    wattroff(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR)); // Désactive l'affichage en vert
+    wrefresh(stdscr); // Rafraîchit l'écran pour afficher les modifications
+
+    // Initialisation des ensembles de descripteurs de fichier pour select
     fd_set read_fds, master_fds;
-    int fd_max;
+    int fd_max; // Le plus grand numéro de descripteur de fichier
+
+    // Initialisation du serveur (création de la socket, configuration, etc.)
     init_server(&server_sock, &server_addr, port);
+
+    // Ajoute la socket serveur à l'ensemble de descripteurs master et définit fd_max
     FD_ZERO(&master_fds);
     FD_SET(server_sock, &master_fds);
     fd_max = server_sock;
+
+    // Boucle principale du serveur
     while (1) {
-        FD_ZERO(&read_fds);
-        FD_SET(server_sock, &read_fds);
-        for (int i = 0; i < total_clients; i++) {
-            FD_SET(client_socks[i], &read_fds);
-        }
-        fd_max = (fd_max > server_sock) ? fd_max : server_sock;
+        // Préparation de l'ensemble de descripteurs pour le tour actuel
+        read_fds = master_fds; // Copie master_fds dans read_fds
+
+        // Attente d'activité sur l'une des sockets avec select
         if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) == -1) {
-            perror("select");
-            break;
+            perror("select"); // Affiche l'erreur si select échoue
+            break; // Quitte la boucle en cas d'erreur
         }
+
+        // Parcours des descripteurs de fichier pour trouver ceux qui ont de l'activité
         for (int i = 0; i <= fd_max; i++) {
             if (FD_ISSET(i, &read_fds)) {
+                // Si la socket active est la socket serveur, gère une nouvelle connexion
                 if (i == server_sock) {
                     handle_new_connection(server_sock, &master_fds, &fd_max);
                 } else {
+                    // Sinon, gère un message provenant d'un client
                     handle_client_message(i, &master_fds);
                 }
             }
         }
     }
+
+    // Nettoyage final : fermeture de la socket serveur et fin de l'utilisation de ncurses
     close(server_sock);
     endwin();
+
     return 0;
 }
 
