@@ -283,7 +283,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
         }
 
         if (buffer[0] == '/') {
-            // Affichage de la commande reçue côté serveur
             wattron(stdscr, COLOR_PAIR(SENT_MSG_COLOR_PAIR));
             if (is_user_admin(client_pseudos[client_index])) {
                 wprintw(stdscr, "[ADMIN] Commande reçue de %s: %s\n", client_pseudos[client_index], buffer);
@@ -318,7 +317,7 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             } else {
                 send(client_sock, "Erreur: Client introuvable.\n", 28, 0);
             }
-            return; // Ne pas traiter d'autres commandes ou messages
+            return; 
         }
        if (strncmp(buffer, "/status ", 7) == 0) {
             char status_message[BUFFER_SIZE];
@@ -394,7 +393,6 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             char targetPseudo[PSEUDO_SIZE] = {0};
             sscanf(buffer + 6, "%s", targetPseudo);
 
-            // Vérifier si l'utilisateur est un admin
             if (is_user_admin(client_pseudos[find_client_index_by_sock(client_sock)])) {
                 kick_client(targetPseudo, client_sock, master_fds);
             } else {
@@ -452,7 +450,7 @@ void handle_client_message(int client_sock, fd_set *master_fds) {
             wprintw(stdscr, "%s\n", full_message);
             wattroff(stdscr, COLOR_PAIR(RECEIVED_MSG_COLOR_PAIR));
         }
-        broadcast_message(client_sock, buffer, client_pseudos[client_index], false); // Ajouter le quatrième argument "false"
+        broadcast_message(client_sock, buffer, client_pseudos[client_index], false);
         wrefresh(stdscr); 
     }
 }
@@ -570,7 +568,6 @@ void broadcast_message(int sender_sock, char *message, char *sender_pseudo, bool
     int isAdmin = is_user_admin(sender_pseudo);
     char full_message[FULL_MESSAGE_SIZE];
 
-    // Utilisez is_status pour préfixer le message avec "STATUS:" si nécessaire
     if (is_status) {
         snprintf(full_message, sizeof(full_message), "STATUS de %s: %s", sender_pseudo, message);
     } else if (isAdmin) {
@@ -584,8 +581,6 @@ void broadcast_message(int sender_sock, char *message, char *sender_pseudo, bool
             send(client_socks[i], full_message, strlen(full_message), 0);
         }
     }
-
-    // Log du message
     log_message(full_message);
 }
 
@@ -673,7 +668,6 @@ void kick_client(char *targetPseudo, int sender_sock, fd_set *master_fds) {
             snprintf(logMsg, sizeof(logMsg), "L'utilisateur %s a été expulsé par %s\n", targetPseudo, client_pseudos[find_client_index(sender_sock)]);
             log_message(logMsg);
 
-            // Broadcast à tous les clients qu'un utilisateur a été kické
             char broadcastMsg[BUFFER_SIZE];
             snprintf(broadcastMsg, sizeof(broadcastMsg), "%s a été expulsé du serveur.", targetPseudo);
             broadcast_message(sender_sock, broadcastMsg, "Serveur", true);
